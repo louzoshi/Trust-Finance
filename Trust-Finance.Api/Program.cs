@@ -19,6 +19,19 @@ builder.Services.AddDbContext<TFDataContext>(options =>
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
 builder.Services.AddTransient<TokenService>();
 builder.Services.AddTransient<AccountService>();
+builder.Services.AddTransient<Trust_Finance.Services.CategoryService>();
+builder.Services.AddTransient<Trust_Finance.Services.TransactionService>();
+
+// CORS (SPA dev server)
+const string CorsPolicy = "Frontend";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicy, policy =>
+        policy
+            .WithOrigins("http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -84,6 +97,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseCors(CorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
