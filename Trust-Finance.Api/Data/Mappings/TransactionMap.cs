@@ -12,7 +12,7 @@ namespace TF.Data.Mappings
             builder.HasKey(t => t.Id);
             builder.Property(t => t.Id).ValueGeneratedOnAdd();
             builder.Property(t => t.Description).IsRequired().HasMaxLength(255);
-            builder.Property(t => t.Amount).IsRequired();
+            builder.Property(t => t.Amount).IsRequired().HasPrecision(18, 2);
             builder.Property(t => t.Date).IsRequired();
             builder.HasOne(t => t.Category)
                 .WithMany(c => c.Transactions)
