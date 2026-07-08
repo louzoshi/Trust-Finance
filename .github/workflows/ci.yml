@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  api:
+    name: API (build & test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Trust-Finance.sln
+
+      - name: Build
+        run: dotnet build Trust-Finance.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Trust-Finance.sln --configuration Release --no-build --verbosity normal
+
+  web:
+    name: Web (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Trust-Finance.Web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Trust-Finance.Web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build (type-check + bundle)
+        run: npm run build

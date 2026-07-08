@@ -1,174 +1,138 @@
-# Trust-Finance - API de Controle Financeiro
+# Trust Finance
 
-Trust-Finance é uma API REST construída com .NET 8 e ASP.NET Core, projetada para gerenciar finanças pessoais de forma segura e escalável. O sistema oferece recursos como cadastro de usuários, autenticação via JWT, controle de categorias e transações, além de documentação interativa com Swagger.
+Full-stack personal finance manager built with a **.NET 8 REST API** and a
+**React + TypeScript** single-page app. Users register, sign in with JWT, and
+track income and expenses across categories, with a dashboard that summarizes
+monthly volume and spending by category.
 
----
-
-## Tecnologias Utilizadas
-
-- .NET 8 + ASP.NET Core Web API
-- Entity Framework Core 8
-- SQL Server
-- Docker + Docker Compose
-- FluentValidation
-- Hash de senhas com SHA256
-- Swagger
-- Autenticação com Token JWT
-- **Testes de Unidade: xUnit + FluentAssertions**
-- **EF Core InMemory para testes**
+The project is organized to mirror the backend's layered architecture on the
+frontend, and is being grown from a personal-finance tool toward a small
+business-management system (sales, products, payment methods).
 
 ---
 
-## Estrutura do Projeto
+## Tech stack
 
-- `Models/` – Classes que representam as entidades do banco de dados (User, Category, etc).
-- `ViewModels/` – Classes para validação e transporte seguro de dados entre a API e o cliente.
-- `Controllers/` – Controladores responsáveis pelos endpoints da aplicação.
-- `Extensions/` – Métodos de extensão, como tratamento de erros de `ModelState`.
-- `Data/` – Contexto do Entity Framework (`TFDataContext`).
-- `Services/` – Regras de negócio e serviços auxiliares (como geração de tokens).
-- `Trust-Finance.Tests/` – Projeto de testes automatizados (xUnit + FluentAssertions).
+**Backend**
 
----
+- .NET 8 / ASP.NET Core Web API
+- Entity Framework Core 8 + SQL Server
+- JWT bearer authentication, role-based authorization
+- Password hashing via ASP.NET Core `PasswordHasher` (PBKDF2)
+- FluentValidation-style data annotations
+- Swagger / OpenAPI
+- xUnit + FluentAssertions + EF Core InMemory (unit tests)
+- Docker Compose for the database
 
-## Funcionalidades implementadas
+**Frontend** (`Trust-Finance.Web/`)
 
-### Categorias
-
-- Lista todas as categorias
-- Busca por ID
-- Cria nova categoria
-- Atualiza categoria
-- Remove categoria
-
-### Usuários
-
-- Lista todos os usuários.
-- Busca por ID
-
-### Autenticação
-
-- Registro de novos usuário com validação
-- Login com retorno de token JWT
-- Proteção de rotas com [Authorize] por Role
-
-### Transações
-
-- Criar transações vinculadas ao usuário autenticado
-- Listar, editar e excluir transações
-
-> As senhas são protegidas com hash SHA256. A autenticação usa JWT, garantindo acesso apenas a usuários autorizados.
-
-### Swagger
-
-A documentação da API está disponível via Swagger, permitindo explorar e testar os endpoints diretamente pelo navegador, após iniciar a aplicação.
+- Vite + React 19 + TypeScript (strict)
+- React Router with JWT-protected routes
+- TanStack Query for server state
+- Recharts for the dashboard
+- CSS design tokens with light/dark themes
 
 ---
 
-## ✅ Testes de Unidade
+## Repository layout
 
-O projeto possui um projeto de testes dedicado: **`Trust-Finance.Tests`**, com foco em validar regras de negócio na camada de **Services**, mantendo Controllers “finos” (HTTP only).
-
-### Stack de testes
-
-- **xUnit** (test runner)
-- **FluentAssertions** (assertions mais expressivas)
-- **EF Core InMemory** (banco em memória para isolamento e velocidade)
-- **Fixtures** para criação do `TFDataContext`
-
-### Cenários cobertos
-
-- Cenários **positivos e negativos** para regras de negócio
-- Exemplo: impedir cadastro de usuário com **e-mail duplicado**
-- Garantia de consistência: ao falhar, **não persiste** dados indevidos
-
-### Como rodar os testes
-
-Na raiz do repositório:
-
-```bash
-dotnet test
+```
+Trust-Finance.Api/     ASP.NET Core Web API
+  Controllers/         HTTP endpoints (thin; delegate to services)
+  Services/            Business rules (Account, Category, Transaction, Token)
+  Models/              EF Core entities
+  ViewModels/          Request/response DTOs and validation
+  Data/                DbContext and entity mappings
+  Extensions/          ModelState + ClaimsPrincipal helpers
+  Migrations/          EF Core migrations
+Trust-Finance.Tests/   xUnit unit tests for the service layer
+Trust-Finance.Web/     React + TypeScript SPA (see its own README)
 ```
 
-Ou rodando apenas o projeto de testes:
+---
 
-```bash
-dotnet test ./Trust-Finance.Tests/Trust-Finance.Tests.csproj
-```
+## Features
 
-> Observação: os testes unitários não dependem do SQL Server, pois usam EF Core InMemory.
+- **Authentication** — register with validation, sign in returning a JWT,
+  routes protected by `[Authorize]` and role.
+- **Categories** — full CRUD.
+- **Transactions** — full CRUD, scoped to the authenticated user.
+- **Dashboard** — monthly volume, spend by category, KPI tiles, recent activity.
+- **API docs** — Swagger UI in development.
+
+Passwords are hashed with ASP.NET Core's `PasswordHasher<T>` (PBKDF2 with a
+per-user salt). Authentication uses JWT so only authorized users reach
+protected routes.
 
 ---
 
-### 🐳 Docker e Docker Compose
+## Running locally
 
-O projeto utiliza Docker Compose para padronizar o ambiente de desenvolvimento, facilitando a execução do banco de dados SQL Server sem a necessidade de instalação local.
+### Prerequisites
 
-#### Benefícios do uso de Docker no projeto
-
-- Ambiente reproduzível
-- Banco de dados isolado em container
-- Setup local mais simples
-- Base preparada para testes automatizados e CI/CD
-
----
-
-### Como rodar o projeto com Docker (recomendado)
-
-#### Pré-requisitos
-
-- Docker
-- Docker Compose
 - .NET SDK 8.x
+- Node.js 20+
+- Docker + Docker Compose
 
----
-
-## Como rodar o projeto
-
-1. Clone o repositório:
-
-```bash
-git clone https://github.com/seu-usuario/tf-api.git
-```
-
-2. Suba o banco de dados com Docker Compose:
+### 1. Start the database
 
 ```bash
 docker compose up -d
 ```
 
-3. Crie o arquivo `appsettings.json` e configure a ConnectionString e JwtKey:
+This runs SQL Server in a container (see `docker-compose.yml`).
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": ""
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "JwtKey": "",
-  "AllowedHosts": "*"
-}
-```
+### 2. Configure and run the API
 
-4. Aplique as migrations e crie o banco:
+The API reads its connection string and JWT key from configuration. Provide
+them via `appsettings.Development.json` or environment variables:
 
 ```bash
+# example (bash)
+export ConnectionStrings__DefaultConnection="Server=localhost,1433;Database=TrustFinance;User ID=sa;Password=YOUR_PASSWORD;TrustServerCertificate=True"
+export JwtKey="a-long-random-development-secret"
+```
+
+Apply migrations and run:
+
+```bash
+cd Trust-Finance.Api
 dotnet ef database update
-```
-
-5. Rode o projeto:
-
-```bash
 dotnet run
 ```
 
-6. Acesse o Swagger:
+The API listens on `http://localhost:5151`; Swagger is at
+`http://localhost:5151/swagger`.
+
+### 3. Run the frontend
 
 ```bash
-http://localhost:5151/swagger
+cd Trust-Finance.Web
+npm install
+npm run dev
 ```
+
+Open `http://localhost:5173`. The Vite dev server proxies `/api` to the API,
+so no CORS configuration is required locally.
+
+---
+
+## Tests
+
+```bash
+dotnet test
+```
+
+Unit tests cover the service layer (business rules such as rejecting duplicate
+emails and duplicate category slugs) and run against EF Core InMemory, so they
+do not need SQL Server.
+
+---
+
+## Roadmap
+
+- Transaction type (income / expense) and balance-based dashboard KPIs
+- Multi-tenancy (organizations, per-org roles, EF Core global query filters)
+- Sales module (products, sale items with frozen prices, payment methods)
+- Server-side reporting endpoints with pagination and date filtering
+- Integration tests with Testcontainers, global error handling, CI/CD to Azure
