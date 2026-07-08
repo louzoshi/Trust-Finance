@@ -42,7 +42,10 @@ public class AccountController : ControllerBase
         try
         {
             var token = await service.LoginAsync(model, tokenService);
-            return Ok(new ResultViewModel<string>(token));
+            // Explicit errors argument: with T == string the single-argument
+            // call binds to the (string error) overload and puts the token
+            // in Errors instead of Data.
+            return Ok(new ResultViewModel<string>(token, new List<string>()));
         }
         catch (UnauthorizedAccessException e)
         {
