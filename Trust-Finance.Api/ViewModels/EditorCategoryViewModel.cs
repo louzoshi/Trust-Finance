@@ -4,11 +4,11 @@ namespace TF.ViewModels
 {
     public class EditorCategoryViewModel
     {
-        [Required(ErrorMessage = "O nome é obrigatório")]
-        [StringLength(40, MinimumLength = 3, ErrorMessage = "Este campo deve conter entre 3 e 40 caracteres")]
+        [Required(ErrorMessage = "Name is required")]
+        [StringLength(40, MinimumLength = 3, ErrorMessage = "Name must be between 3 and 40 characters")]
         public required string Name { get; set; }
 
-        [Required(ErrorMessage = "O slug é obrigatório")]
+        [Required(ErrorMessage = "Slug is required")]
         public required string Slug { get; set; }
     }
 }

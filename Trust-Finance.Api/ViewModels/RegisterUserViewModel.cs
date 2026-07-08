@@ -4,23 +4,23 @@ namespace TF.ViewModels
 {
     public class RegisterUserViewModel
     {
-        [Required(ErrorMessage = "O nome é obrigatório")]
-        [StringLength(40, MinimumLength = 3, ErrorMessage = "Este campo deve conter entre 3 e 40 caracteres")]
+        [Required(ErrorMessage = "Name is required")]
+        [StringLength(40, MinimumLength = 3, ErrorMessage = "Name must be between 3 and 40 characters")]
         public required string Name { get; set; }
 
-        [Required(ErrorMessage = "O email é obrigatório")]
-        [EmailAddress(ErrorMessage = "Email inválido")]
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Invalid email")]
         public required string Email { get; set; }
 
-        [Required(ErrorMessage = "A senha é obrigatória")]
-        [StringLength(20, MinimumLength = 6, ErrorMessage = "A senha deve conter entre 6 e 20 caracteres")]
+        [Required(ErrorMessage = "Password is required")]
+        [StringLength(20, MinimumLength = 6, ErrorMessage = "Password must be between 6 and 20 characters")]
         public required string Password { get; set; }
 
-        [Required(ErrorMessage = "A imagem é obrigatória")]
-        [Url(ErrorMessage = "A imagem deve ser uma URL válida")]
+        [Required(ErrorMessage = "Image is required")]
+        [Url(ErrorMessage = "Image must be a valid URL")]
         public required string Image { get; set; }
 
-        [Required(ErrorMessage = "O slug é obrigatório")]
+        [Required(ErrorMessage = "Slug is required")]
         public required string Slug { get; set; }
     }
 }

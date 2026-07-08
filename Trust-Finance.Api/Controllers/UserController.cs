@@ -24,7 +24,7 @@ namespace TF.Controllers
             }
             catch
             {
-                return StatusCode(500, new ResultViewModel<List<User>>("05X04 - Falha interna no servidor"));
+                return StatusCode(500, new ResultViewModel<List<User>>("Internal server error"));
             }
         }
 
@@ -41,13 +41,13 @@ namespace TF.Controllers
                     .FirstOrDefaultAsync(x => x.Id == id);
 
                 if (user == null)
-                    return NotFound(new ResultViewModel<User>("Conteúdo não encontrado"));
+                    return NotFound(new ResultViewModel<User>("User not found"));
 
                 return Ok(new ResultViewModel<User>(user));
             }
             catch
             {
-                return StatusCode(500, new ResultViewModel<User>("Falha interna no servidor"));
+                return StatusCode(500, new ResultViewModel<User>("Internal server error"));
             }
         }
 
@@ -65,7 +65,7 @@ namespace TF.Controllers
             {
                 var user = await context.Users.FirstOrDefaultAsync(x => x.Id == id);
                 if (user == null)
-                    return NotFound(new ResultViewModel<User>("Conteúdo não encontrado"));
+                    return NotFound(new ResultViewModel<User>("User not found"));
 
                 user.Name = model.Name;
                 user.Email = model.Email;
@@ -77,14 +77,13 @@ namespace TF.Controllers
 
                 return Ok(new ResultViewModel<User>(user));
             }
-            catch (DbUpdateConcurrencyException e)
+            catch (DbUpdateException)
             {
-                var details = e.InnerException?.Message ?? e.Message;
-                return StatusCode(400, new ResultViewModel<User>($"05X03 - {details}"));
+                return StatusCode(400, new ResultViewModel<User>("Could not update the user"));
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, new ResultViewModel<User>($"05X04 - Falha interna no servidor: {e.Message}"));
+                return StatusCode(500, new ResultViewModel<User>("Internal server error"));
             }
         }
 
@@ -98,21 +97,20 @@ namespace TF.Controllers
             {
                 var user = await context.Users.FirstOrDefaultAsync(x => x.Id == id);
                 if (user == null)
-                    return NotFound(new ResultViewModel<User>("Conteúdo não encontrado"));
+                    return NotFound(new ResultViewModel<User>("User not found"));
 
                 context.Users.Remove(user);
                 await context.SaveChangesAsync();
 
                 return Ok(new ResultViewModel<User>(user));
             }
-            catch (DbUpdateConcurrencyException e)
+            catch (DbUpdateException)
             {
-                var details = e.InnerException?.Message ?? e.Message;
-                return StatusCode(400, new ResultViewModel<User>($"05X03 - {details}"));
+                return StatusCode(400, new ResultViewModel<User>("Could not delete the user"));
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, new ResultViewModel<User>($"05X04 - Falha interna no servidor: {e.Message}"));
+                return StatusCode(500, new ResultViewModel<User>("Internal server error"));
             }
         }
     }

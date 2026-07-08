@@ -68,7 +68,7 @@ builder.Services.AddSwaggerGen(c =>
 // JWT key validation (removes CS8604)
 var jwtKey = builder.Configuration["JwtKey"];
 if (string.IsNullOrWhiteSpace(jwtKey))
-    throw new InvalidOperationException("JwtKey não configurada. Defina a chave no appsettings ou nas variáveis de ambiente.");
+    throw new InvalidOperationException("JwtKey is not configured. Set it in appsettings or as an environment variable.");
 
 // Authentication
 builder.Services.AddAuthentication(options =>

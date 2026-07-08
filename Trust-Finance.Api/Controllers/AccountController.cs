@@ -53,7 +53,7 @@ public class AccountController : ControllerBase
         }
         catch (Exception)
         {
-            return StatusCode(500, new ResultViewModel<string>("Erro interno ao realizar login"));
+            return StatusCode(500, new ResultViewModel<string>("Internal error while signing in"));
         }
     }
 }

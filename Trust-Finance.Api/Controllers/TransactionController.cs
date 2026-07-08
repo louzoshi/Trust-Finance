@@ -30,7 +30,7 @@ public class TransactionController : ControllerBase
         var transaction = await service.GetByIdAsync(id, userId);
 
         if (transaction == null)
-            return NotFound(new ResultViewModel<Transaction>("Conteúdo não encontrado"));
+            return NotFound(new ResultViewModel<Transaction>("Transaction not found"));
 
         return Ok(new ResultViewModel<Transaction>(transaction));
     }
@@ -82,7 +82,7 @@ public class TransactionController : ControllerBase
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new ResultViewModel<Transaction>("Conteúdo não encontrado"));
+            return NotFound(new ResultViewModel<Transaction>("Transaction not found"));
         }
     }
 
@@ -99,7 +99,7 @@ public class TransactionController : ControllerBase
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new ResultViewModel<Transaction>("Conteúdo não encontrado"));
+            return NotFound(new ResultViewModel<Transaction>("Transaction not found"));
         }
     }
 }

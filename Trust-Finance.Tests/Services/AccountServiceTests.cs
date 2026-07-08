@@ -67,9 +67,9 @@ public class AccountServiceTests
 
         // Assert
         var ex = await action.Should().ThrowAsync<InvalidOperationException>();
-        ex.WithMessage("E-mail já cadastrado");
+        ex.WithMessage("Email already registered");
 
-        // Garante que não criou um segundo usuário
+        // Ensures a second user was not created
         context.Users.Should().HaveCount(1);
     }
 }

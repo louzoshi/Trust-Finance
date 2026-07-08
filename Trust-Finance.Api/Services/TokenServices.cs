@@ -20,7 +20,7 @@ namespace TF.Services
         {
             var jwtKey = _configuration["JwtKey"];
             if (string.IsNullOrEmpty(jwtKey))
-                throw new Exception("JwtKey não configurada!");
+                throw new InvalidOperationException("JwtKey is not configured!");
 
             var key = Encoding.ASCII.GetBytes(jwtKey);
             var tokenHandler = new JwtSecurityTokenHandler();

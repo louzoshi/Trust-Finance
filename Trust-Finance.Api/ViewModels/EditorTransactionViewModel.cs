@@ -4,21 +4,18 @@ namespace TF.ViewModels
 {
     public class EditorTransactionViewModel
     {
-        [Required(ErrorMessage = "Campo obrigatório")]
-        [StringLength(100, ErrorMessage = "O campo deve ter entre 3 e 100 caracteres", MinimumLength = 3)]
+        [Required(ErrorMessage = "Description is required")]
+        [StringLength(100, ErrorMessage = "Description must be between 3 and 100 characters", MinimumLength = 3)]
         public string Description { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Campo obrigatório")]
-        [Range(0.01, 9999999999.99, ErrorMessage = "Valor inválido")]
+        [Required(ErrorMessage = "Amount is required")]
+        [Range(0.01, 9999999999.99, ErrorMessage = "Invalid amount")]
         public decimal Amount { get; set; }
 
-        [Required(ErrorMessage = "Campo obrigatório")]
+        [Required(ErrorMessage = "Date is required")]
         public DateTime Date { get; set; }
 
-        [Required(ErrorMessage = "Campo obrigatório")]
+        [Required(ErrorMessage = "Category is required")]
         public int CategoryId { get; set; }
-
-        //[Required(ErrorMessage = "Campo obrigatório")]
-        //public int UserId { get; set; }
     }
 }

@@ -19,16 +19,16 @@ public class AccountService
 
     public async Task<User> RegisterAsync(RegisterUserViewModel model)
     {
-        // Normaliza e-mail para reduzir falsos negativos (espaços, etc.)
+        // Normalize the email to avoid false negatives (surrounding spaces, etc.)
         var email = model.Email?.Trim();
 
-        // Regra de negócio: e-mail deve ser único
+        // Business rule: email must be unique
         var emailAlreadyExists = await _context.Users
             .AsNoTracking()
             .AnyAsync(x => x.Email == email);
 
         if (emailAlreadyExists)
-            throw new InvalidOperationException("E-mail já cadastrado");
+            throw new InvalidOperationException("Email already registered");
 
         var user = new User
         {
@@ -56,13 +56,13 @@ public class AccountService
             .FirstOrDefaultAsync(x => x.Email == email);
 
         if (user == null)
-            throw new UnauthorizedAccessException("Usuário ou senha inválidos");
+            throw new UnauthorizedAccessException("Invalid username or password");
 
         var result = _passwordHasher.VerifyHashedPassword(
             user, user.PasswordHash, model.Password);
 
         if (result == PasswordVerificationResult.Failed)
-            throw new UnauthorizedAccessException("Usuário ou senha inválidos");
+            throw new UnauthorizedAccessException("Invalid username or password");
 
         return tokenService.GenerateToken(user);
     }
