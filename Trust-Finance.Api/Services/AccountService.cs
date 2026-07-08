@@ -36,7 +36,7 @@ public class AccountService
             Email = email ?? string.Empty,
             Image = model.Image,
             Slug = model.Slug,
-            Role = "admin"
+            Role = "user"
         };
 
         user.PasswordHash = _passwordHasher.HashPassword(user, model.Password);

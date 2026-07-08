@@ -6,8 +6,6 @@ namespace TF.Controllers
     using TF.Data;
     using TF.ViewModels;
     using TF.Extensions;
-    using System.Security.Cryptography;
-    using System.Text;
     using Microsoft.AspNetCore.Authorization;
 
     [Route("api/[controller]")]
@@ -50,16 +48,6 @@ namespace TF.Controllers
             catch
             {
                 return StatusCode(500, new ResultViewModel<User>("Falha interna no servidor"));
-            }
-        }
-
-        private string HashPassword(string password)
-        {
-            using (var sha256 = SHA256.Create())
-            {
-                var bytes = Encoding.UTF8.GetBytes(password);
-                var hash = sha256.ComputeHash(bytes);
-                return Convert.ToBase64String(hash);
             }
         }
 
