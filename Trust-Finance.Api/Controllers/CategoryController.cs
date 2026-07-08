@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TF.Extensions;
 using TF.Models;
@@ -6,12 +7,26 @@ using Trust_Finance.Services;
 
 [ApiController]
 [Route("api/categories")]
+[Authorize]
 public class CategoryController : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromServices] CategoryService service)
         => Ok(new ResultViewModel<List<Category>>(await service.GetAllAsync()));
+
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(
+        int id,
+        [FromServices] CategoryService service)
+    {
+        var category = await service.GetByIdAsync(id);
+
+        if (category == null)
+            return NotFound(new ResultViewModel<Category>("Category not found"));
+
+        return Ok(new ResultViewModel<Category>(category));
+    }
 
     [HttpPost]
     public async Task<IActionResult> Post(
@@ -24,11 +39,49 @@ public class CategoryController : ControllerBase
         try
         {
             var category = await service.CreateAsync(model.Name, model.Slug);
-            return Created($"api/categories/{category.Id}", category);
+            return Created(
+                $"api/categories/{category.Id}",
+                new ResultViewModel<Category>(category));
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new ResultViewModel<Category>(ex.Message));
+        }
+    }
+
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Put(
+        int id,
+        [FromBody] EditorCategoryViewModel model,
+        [FromServices] CategoryService service)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(new ResultViewModel<Category>(ModelState.GetErrors()));
+
+        try
+        {
+            var category = await service.UpdateAsync(id, model.Name, model.Slug);
+            return Ok(new ResultViewModel<Category>(category));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new ResultViewModel<Category>("Category not found"));
+        }
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(
+        int id,
+        [FromServices] CategoryService service)
+    {
+        try
+        {
+            var category = await service.DeleteAsync(id);
+            return Ok(new ResultViewModel<Category>(category));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new ResultViewModel<Category>("Category not found"));
         }
     }
 }
