@@ -24,8 +24,17 @@ jobs:
       - name: Build
         run: dotnet build Trust-Finance.sln --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test Trust-Finance.sln --configuration Release --no-build --verbosity normal
+      - name: Unit tests
+        run: >
+          dotnet test Trust-Finance.Tests/Trust-Finance.Tests.csproj
+          --configuration Release --no-build --verbosity normal
+
+      # Testcontainers starts a real SQL Server via the Docker daemon that is
+      # preinstalled on the GitHub-hosted runners.
+      - name: Integration tests (Testcontainers + SQL Server)
+        run: >
+          dotnet test Trust-Finance.IntegrationTests/Trust-Finance.IntegrationTests.csproj
+          --configuration Release --no-build --verbosity normal
 
   web:
     name: Web (build)
