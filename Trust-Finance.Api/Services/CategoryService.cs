@@ -46,6 +46,16 @@ public class CategoryService
         var category = await GetByIdAsync(id)
             ?? throw new KeyNotFoundException("Category not found");
 
+        // Slug is backed by a unique index; without this check the update surfaces as an
+        // unhandled DbUpdateException instead of a 400.
+        var slugTaken = await _context
+            .Categories
+            .AsNoTracking()
+            .AnyAsync(x => x.Slug == slug && x.Id != id);
+
+        if (slugTaken)
+            throw new InvalidOperationException("Slug already exists");
+
         category.Name = name;
         category.Slug = slug;
 

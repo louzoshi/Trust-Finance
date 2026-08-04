@@ -35,6 +35,8 @@ public class TransactionService
         int categoryId,
         int userId)
     {
+        await EnsureCategoryExistsAsync(categoryId);
+
         var transaction = new Transaction
         {
             Description = description,
@@ -61,6 +63,8 @@ public class TransactionService
         var transaction = await GetByIdAsync(id, userId)
             ?? throw new KeyNotFoundException("Transaction not found");
 
+        await EnsureCategoryExistsAsync(categoryId);
+
         transaction.Description = description;
         transaction.Amount = amount;
         transaction.Date = date;
@@ -79,5 +83,20 @@ public class TransactionService
         await _context.SaveChangesAsync();
 
         return transaction;
+    }
+
+    /// <summary>
+    /// CategoryId is a foreign key: an unknown value fails at SaveChanges with a database
+    /// error rather than a readable rejection, so it is validated up front.
+    /// </summary>
+    private async Task EnsureCategoryExistsAsync(int categoryId)
+    {
+        var exists = await _context
+            .Categories
+            .AsNoTracking()
+            .AnyAsync(c => c.Id == categoryId);
+
+        if (!exists)
+            throw new InvalidOperationException("Category not found");
     }
 }

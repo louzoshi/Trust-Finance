@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trust-Finance", "Trust-Fina
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trust-Finance.Tests", "Trust-Finance.Tests\Trust-Finance.Tests.csproj", "{9810AD5D-4C7F-4B7A-8713-8CCE584342BA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trust-Finance.IntegrationTests", "Trust-Finance.IntegrationTests\Trust-Finance.IntegrationTests.csproj", "{FE10CE30-7FBC-4A6A-BB8B-58CBF2622FA6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{9810AD5D-4C7F-4B7A-8713-8CCE584342BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9810AD5D-4C7F-4B7A-8713-8CCE584342BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9810AD5D-4C7F-4B7A-8713-8CCE584342BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE10CE30-7FBC-4A6A-BB8B-58CBF2622FA6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE10CE30-7FBC-4A6A-BB8B-58CBF2622FA6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE10CE30-7FBC-4A6A-BB8B-58CBF2622FA6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE10CE30-7FBC-4A6A-BB8B-58CBF2622FA6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

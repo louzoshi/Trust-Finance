@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using TF.Extensions;
 using TF.Models;
 using TF.Services;
 using TF.ViewModels;
@@ -16,13 +15,15 @@ public class AccountController : ControllerBase
         [FromBody] RegisterUserViewModel model,
         [FromServices] AccountService service)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<User>(ModelState.GetErrors()));
-
         try
         {
             var user = await service.RegisterAsync(model);
             return Created($"api/users/{user.Id}", new ResultViewModel<User>(user));
+        }
+        catch (InvalidOperationException e)
+        {
+            // Broken business rule (e.g. the email is already taken).
+            return BadRequest(new ResultViewModel<User>(e.Message));
         }
         catch (DbUpdateException e)
         {
@@ -36,9 +37,6 @@ public class AccountController : ControllerBase
        [FromServices] AccountService service,
        [FromServices] TokenService tokenService)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<string>(ModelState.GetErrors()));
-
         try
         {
             var token = await service.LoginAsync(model, tokenService);

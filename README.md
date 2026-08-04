@@ -21,7 +21,8 @@ business-management system (sales, products, payment methods).
 - Password hashing via ASP.NET Core `PasswordHasher` (PBKDF2)
 - FluentValidation-style data annotations
 - Swagger / OpenAPI
-- xUnit + FluentAssertions + EF Core InMemory (unit tests)
+- xUnit + FluentAssertions — unit tests on EF Core InMemory, integration tests
+  against a real SQL Server started by Testcontainers
 - Docker Compose for the database
 
 **Frontend** (`Trust-Finance.Web/`)
@@ -46,6 +47,9 @@ Trust-Finance.Api/     ASP.NET Core Web API
   Extensions/          ModelState + ClaimsPrincipal helpers
   Migrations/          EF Core migrations
 Trust-Finance.Tests/   xUnit unit tests for the service layer
+Trust-Finance.IntegrationTests/
+  Infrastructure/      Testcontainers + WebApplicationFactory harness
+  Api/                 HTTP-level tests per endpoint group
 Trust-Finance.Web/     React + TypeScript SPA (see its own README)
 ```
 
@@ -120,12 +124,36 @@ so no CORS configuration is required locally.
 ## Tests
 
 ```bash
-dotnet test
+dotnet test                                             # everything
+dotnet test Trust-Finance.Tests                         # unit tests only
+dotnet test Trust-Finance.IntegrationTests              # integration tests only
 ```
 
-Unit tests cover the service layer (business rules such as rejecting duplicate
+**Unit tests** cover the service layer (business rules such as rejecting duplicate
 emails and duplicate category slugs) and run against EF Core InMemory, so they
 do not need SQL Server.
+
+**Integration tests** boot the API through `WebApplicationFactory<Program>` — the
+same `Program.cs` that runs in production — against a throwaway SQL Server that
+[Testcontainers](https://testcontainers.com/) starts for the test run. Nothing is
+mocked or substituted: requests go through the real middleware pipeline, the real
+DI graph, the real EF Core SQL Server provider and the real migrations. A single
+container is shared across the suite and [Respawn](https://github.com/jbogard/Respawn)
+truncates every table between tests.
+
+They cover what only shows up once the whole stack is wired together:
+
+- JWT issuing and validation — wrong signing key, expired and tampered tokens
+- `[Authorize]` and role policies — 401 for anonymous callers, 403 for a
+  non-admin reaching the admin area
+- Per-user data isolation — one user cannot read, update or delete another
+  user's transactions
+- Database constraints the InMemory provider does not enforce — the unique index
+  on category slugs, the transaction foreign keys, `ON DELETE CASCADE`, and
+  `decimal(18,2)` round-tripping
+- The HTTP error contract — status codes and the `ResultViewModel` envelope
+
+The only requirement is a running Docker daemon.
 
 ---
 
@@ -135,4 +163,5 @@ do not need SQL Server.
 - Multi-tenancy (organizations, per-org roles, EF Core global query filters)
 - Sales module (products, sale items with frozen prices, payment methods)
 - Server-side reporting endpoints with pagination and date filtering
-- Integration tests with Testcontainers, global error handling, CI/CD to Azure
+- Global exception-handling middleware to replace the per-controller try/catch
+- CI/CD to Azure

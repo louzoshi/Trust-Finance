@@ -40,21 +40,25 @@ public class TransactionController : ControllerBase
         [FromBody] EditorTransactionViewModel model,
         [FromServices] TransactionService service)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<Transaction>(ModelState.GetErrors()));
-
         var userId = User.GetUserId();
 
-        var transaction = await service.CreateAsync(
-            model.Description,
-            model.Amount,
-            model.Date,
-            model.CategoryId,
-            userId);
+        try
+        {
+            var transaction = await service.CreateAsync(
+                model.Description,
+                model.Amount,
+                model.Date,
+                model.CategoryId,
+                userId);
 
-        return Created(
-            $"api/transactions/{transaction.Id}",
-            new ResultViewModel<Transaction>(transaction));
+            return Created(
+                $"api/transactions/{transaction.Id}",
+                new ResultViewModel<Transaction>(transaction));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ResultViewModel<Transaction>(ex.Message));
+        }
     }
 
     [HttpPut("{id:int}")]
@@ -63,9 +67,6 @@ public class TransactionController : ControllerBase
         [FromBody] EditorTransactionViewModel model,
         [FromServices] TransactionService service)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<Transaction>(ModelState.GetErrors()));
-
         try
         {
             var userId = User.GetUserId();
@@ -83,6 +84,10 @@ public class TransactionController : ControllerBase
         catch (KeyNotFoundException)
         {
             return NotFound(new ResultViewModel<Transaction>("Transaction not found"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ResultViewModel<Transaction>(ex.Message));
         }
     }
 

@@ -1,7 +1,10 @@
 using TF.Data;
 using Microsoft.EntityFrameworkCore;
 using TF.Services;
+using TF.Extensions;
+using TF.ViewModels;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -35,6 +38,15 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
+// [ApiController] rejects invalid models before the action ever runs, so validation
+// failures have to be shaped here. Without this they come back as RFC 7807
+// ProblemDetails while every other error uses the ResultViewModel envelope.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+        new BadRequestObjectResult(new ResultViewModel<string>(context.ModelState.GetErrors()));
+});
 
 // Swagger
 builder.Services.AddSwaggerGen(c =>
@@ -102,3 +114,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+// Top-level statements compile into an internal Program class. Making it public
+// lets WebApplicationFactory<Program> boot this exact pipeline in integration tests.
+public partial class Program { }

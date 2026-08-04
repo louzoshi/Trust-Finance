@@ -5,7 +5,6 @@ namespace TF.Controllers
     using TF.Models;
     using TF.Data;
     using TF.ViewModels;
-    using TF.Extensions;
     using Microsoft.AspNetCore.Authorization;
 
     [Route("api/[controller]")]
@@ -58,9 +57,6 @@ namespace TF.Controllers
             [FromBody] RegisterUserViewModel model,
             [FromServices] TFDataContext context)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(new ResultViewModel<User>(ModelState.GetErrors()));
-
             try
             {
                 var user = await context.Users.FirstOrDefaultAsync(x => x.Id == id);

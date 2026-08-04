@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using TF.Extensions;
 using TF.Models;
 using TF.ViewModels;
 using Trust_Finance.Services;
@@ -33,9 +32,6 @@ public class CategoryController : ControllerBase
         [FromBody] EditorCategoryViewModel model,
         [FromServices] CategoryService service)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<Category>(ModelState.GetErrors()));
-
         try
         {
             var category = await service.CreateAsync(model.Name, model.Slug);
@@ -55,9 +51,6 @@ public class CategoryController : ControllerBase
         [FromBody] EditorCategoryViewModel model,
         [FromServices] CategoryService service)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ResultViewModel<Category>(ModelState.GetErrors()));
-
         try
         {
             var category = await service.UpdateAsync(id, model.Name, model.Slug);
@@ -66,6 +59,10 @@ public class CategoryController : ControllerBase
         catch (KeyNotFoundException)
         {
             return NotFound(new ResultViewModel<Category>("Category not found"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ResultViewModel<Category>(ex.Message));
         }
     }
 
