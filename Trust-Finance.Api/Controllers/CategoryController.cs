@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TF.Extensions;
 using TF.Models;
 using TF.ViewModels;
 using Trust_Finance.Services;
@@ -12,14 +13,15 @@ public class CategoryController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromServices] CategoryService service)
-        => Ok(new ResultViewModel<List<Category>>(await service.GetAllAsync()));
+        => Ok(new ResultViewModel<List<Category>>(
+            await service.GetAllAsync(User.GetUserId())));
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(
         int id,
         [FromServices] CategoryService service)
     {
-        var category = await service.GetByIdAsync(id);
+        var category = await service.GetByIdAsync(id, User.GetUserId());
 
         if (category == null)
             return NotFound(new ResultViewModel<Category>("Category not found"));
@@ -34,7 +36,8 @@ public class CategoryController : ControllerBase
     {
         try
         {
-            var category = await service.CreateAsync(model.Name, model.Slug);
+            var category = await service.CreateAsync(
+                model.Name, model.Slug, User.GetUserId());
             return Created(
                 $"api/categories/{category.Id}",
                 new ResultViewModel<Category>(category));
@@ -53,7 +56,8 @@ public class CategoryController : ControllerBase
     {
         try
         {
-            var category = await service.UpdateAsync(id, model.Name, model.Slug);
+            var category = await service.UpdateAsync(
+                id, model.Name, model.Slug, User.GetUserId());
             return Ok(new ResultViewModel<Category>(category));
         }
         catch (KeyNotFoundException)
@@ -73,7 +77,7 @@ public class CategoryController : ControllerBase
     {
         try
         {
-            var category = await service.DeleteAsync(id);
+            var category = await service.DeleteAsync(id, User.GetUserId());
             return Ok(new ResultViewModel<Category>(category));
         }
         catch (KeyNotFoundException)

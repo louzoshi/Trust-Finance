@@ -6,8 +6,9 @@ track income and expenses across categories, with a dashboard that summarizes
 monthly volume and spending by category.
 
 The project is organized to mirror the backend's layered architecture on the
-frontend, and is being grown from a personal-finance tool toward a small
-business-management system (sales, products, payment methods).
+frontend. Every record — transactions and categories alike — belongs to the user
+who created it, enforced in the service layer and covered by integration tests
+that run against a real SQL Server.
 
 ---
 
@@ -59,7 +60,8 @@ Trust-Finance.Web/     React + TypeScript SPA (see its own README)
 
 - **Authentication** — register with validation, sign in returning a JWT,
   routes protected by `[Authorize]` and role.
-- **Categories** — full CRUD.
+- **Categories** — full CRUD, owned by the user who created them. Slugs are unique
+  per user, so two people can each have a `groceries` category.
 - **Transactions** — full CRUD, scoped to the authenticated user.
 - **Dashboard** — monthly volume, spend by category, KPI tiles, recent activity.
 - **API docs** — Swagger UI in development.
@@ -147,10 +149,11 @@ They cover what only shows up once the whole stack is wired together:
 - `[Authorize]` and role policies — 401 for anonymous callers, 403 for a
   non-admin reaching the admin area
 - Per-user data isolation — one user cannot read, update or delete another
-  user's transactions
-- Database constraints the InMemory provider does not enforce — the unique index
-  on category slugs, the transaction foreign keys, `ON DELETE CASCADE`, and
-  `decimal(18,2)` round-tripping
+  user's transactions or categories, and cannot file a transaction against
+  somebody else's category
+- Database constraints the InMemory provider does not enforce — the composite
+  unique index on `(UserId, Slug)`, the transaction foreign keys,
+  `ON DELETE CASCADE`, and `decimal(18,2)` round-tripping
 - The HTTP error contract — status codes and the `ResultViewModel` envelope
 
 The only requirement is a running Docker daemon.
@@ -159,9 +162,20 @@ The only requirement is a running Docker daemon.
 
 ## Roadmap
 
-- Transaction type (income / expense) and balance-based dashboard KPIs
-- Multi-tenancy (organizations, per-org roles, EF Core global query filters)
-- Sales module (products, sale items with frozen prices, payment methods)
-- Server-side reporting endpoints with pagination and date filtering
+Scope is deliberately capped at personal finance. The goal is a v1.0 that a handful
+of real people use, not a business-management system.
+
+**Towards v1.0**
+
+- Transaction type (income / expense) and a balance-based dashboard
+- Recurring transactions (salary, rent, subscriptions)
+- Server-side summary endpoint plus pagination and date filtering, so the dashboard
+  stops loading the full history into the browser
+- Auth hardening — refresh tokens, login rate limiting, issuer/audience validation
 - Global exception-handling middleware to replace the per-controller try/catch
-- CI/CD to Azure
+- A public deployment over HTTPS
+
+**Later**
+
+- CSV / OFX statement import
+- Multiple accounts (checking, credit card, cash)

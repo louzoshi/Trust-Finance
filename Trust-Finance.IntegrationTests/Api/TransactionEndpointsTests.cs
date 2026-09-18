@@ -66,9 +66,10 @@ public class TransactionEndpointsTests : IntegrationTestBase
     {
         var (ada, category) = await SignInWithCategoryAsync();
         var bob = await SignUpAsync("bob@trustfinance.dev");
+        var bobsCategory = await CreateCategoryAsync(bob.Client, "Rent", "rent");
 
         await CreateTransactionAsync(ada.Client, category.Id, "Ada's coffee");
-        await CreateTransactionAsync(bob.Client, category.Id, "Bob's rent");
+        await CreateTransactionAsync(bob.Client, bobsCategory.Id, "Bob's rent");
 
         var response = await ada.Client.GetAsync("/api/transactions");
 
@@ -211,6 +212,28 @@ public class TransactionEndpointsTests : IntegrationTestBase
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.ReadResultAsync<Transaction>()).ErrorMessages.Should().Contain(expectedError);
+    }
+
+    [Fact]
+    public async Task A_transaction_cannot_point_at_another_users_category()
+    {
+        var (ada, adasCategory) = await SignInWithCategoryAsync();
+        var bob = await SignUpAsync("bob@trustfinance.dev");
+
+        var response = await bob.Client.PostAsJsonAsync("/api/transactions", new
+        {
+            description = "Borrowed category",
+            amount = 10m,
+            date = Date,
+            categoryId = adasCategory.Id
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.ReadResultAsync<Transaction>())
+            .ErrorMessages.Should().Contain("Category not found");
+
+        await using var context = CreateDbContext();
+        (await context.Transactions.AnyAsync()).Should().BeFalse();
     }
 
     [Fact]

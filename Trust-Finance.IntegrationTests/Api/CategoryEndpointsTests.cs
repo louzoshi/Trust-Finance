@@ -38,18 +38,77 @@ public class CategoryEndpointsTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Get_lists_every_category()
+    public async Task Get_returns_only_the_callers_categories()
     {
         var client = await SignedInAsync();
         await CreateCategoryAsync(client, "Groceries", "groceries");
         await CreateCategoryAsync(client, "Rent", "rent");
+
+        var bob = await SignUpAsync("bob@trustfinance.dev");
+        await CreateCategoryAsync(bob.Client, "Bob's car", "car");
 
         var response = await client.GetAsync("/api/categories");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.ReadDataAsync<List<Category>>())
             .Should().HaveCount(2)
-            .And.OnlyHaveUniqueItems(c => c.Slug);
+            .And.OnlyHaveUniqueItems(c => c.Slug)
+            .And.NotContain(c => c.Slug == "car");
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("DELETE")]
+    public async Task Another_users_category_is_invisible(string method)
+    {
+        var client = await SignedInAsync();
+        var adas = await CreateCategoryAsync(client, "Groceries", "groceries");
+        var bob = await SignUpAsync("bob@trustfinance.dev");
+
+        var response = await bob.Client.SendAsync(
+            new HttpRequestMessage(new HttpMethod(method), $"/api/categories/{adas.Id}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        await using var context = CreateDbContext();
+        (await context.Categories.CountAsync())
+            .Should().Be(1, "Bob must not be able to delete Ada's category");
+    }
+
+    [Fact]
+    public async Task Another_user_cannot_update_a_category()
+    {
+        var client = await SignedInAsync();
+        var adas = await CreateCategoryAsync(client, "Groceries", "groceries");
+        var bob = await SignUpAsync("bob@trustfinance.dev");
+
+        var response = await bob.Client.PutAsJsonAsync(
+            $"/api/categories/{adas.Id}",
+            new { name = "Hijacked", slug = "hijacked" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        await using var context = CreateDbContext();
+        (await context.Categories.SingleAsync()).Name.Should().Be("Groceries");
+    }
+
+    [Fact]
+    public async Task Two_users_can_each_have_a_category_with_the_same_slug()
+    {
+        var client = await SignedInAsync();
+        await CreateCategoryAsync(client, "Groceries", "groceries");
+        var bob = await SignUpAsync("bob@trustfinance.dev");
+
+        var response = await bob.Client.PostAsJsonAsync(
+            "/api/categories",
+            new { name = "Groceries", slug = "groceries" });
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            "the unique index is on (UserId, Slug), not on Slug alone");
+
+        await using var context = CreateDbContext();
+        (await context.Categories.CountAsync(c => c.Slug == "groceries")).Should().Be(2);
     }
 
     [Fact]
