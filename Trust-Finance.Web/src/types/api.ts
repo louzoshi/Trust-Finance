@@ -52,8 +52,6 @@ export interface RegisterPayload {
   name: string;
   email: string;
   password: string;
-  image: string;
-  slug: string;
 }
 
 export interface AuthUser {

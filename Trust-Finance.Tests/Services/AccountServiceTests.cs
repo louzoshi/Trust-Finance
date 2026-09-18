@@ -19,9 +19,7 @@ public class AccountServiceTests
         {
             Name = "Teste",
             Email = "teste@gmail.com",
-            Password = "teste123",
-            Image = "img",
-            Slug = "teste"
+            Password = "teste123"
         };
 
         // Act
@@ -46,18 +44,14 @@ public class AccountServiceTests
         {
             Name = "Teste",
             Email = "duplicado@gmail.com",
-            Password = "123456",
-            Image = "img",
-            Slug = "teste"
+            Password = "123456"
         };
 
         var secondModel = new RegisterUserViewModel
         {
             Name = "Teste",
             Email = "duplicado@gmail.com",
-            Password = "123456",
-            Image = "img",
-            Slug = "teste"
+            Password = "123456"
         };
 
         await service.RegisterAsync(firstModel);
@@ -71,5 +65,51 @@ public class AccountServiceTests
 
         // Ensures a second user was not created
         context.Users.Should().HaveCount(1);
+    }
+
+    [Theory]
+    [InlineData("Louzoshi", "louzoshi")]
+    [InlineData("João da Silva", "joao-da-silva")]
+    [InlineData("  Ana   Maria  ", "ana-maria")]
+    [InlineData("O'Brien & Co.", "o-brien-co")]
+    [InlineData("!!!", "user")]
+    public async Task Register_Should_Derive_The_Slug_From_The_Name(
+        string name, string expected)
+    {
+        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
+        var service = new AccountService(context);
+
+        var user = await service.RegisterAsync(new RegisterUserViewModel
+        {
+            Name = name,
+            Email = "slug@gmail.com",
+            Password = "teste123"
+        });
+
+        user.Slug.Should().Be(expected);
+        user.Image.Should().BeEmpty("an account is opened without supplying an avatar");
+    }
+
+    [Fact]
+    public async Task Register_Should_Not_Repeat_A_Slug_Between_Two_Users()
+    {
+        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
+        var service = new AccountService(context);
+
+        var first = await service.RegisterAsync(new RegisterUserViewModel
+        {
+            Name = "Ana Maria",
+            Email = "ana1@gmail.com",
+            Password = "teste123"
+        });
+        var second = await service.RegisterAsync(new RegisterUserViewModel
+        {
+            Name = "Ana Maria",
+            Email = "ana2@gmail.com",
+            Password = "teste123"
+        });
+
+        first.Slug.Should().Be("ana-maria");
+        second.Slug.Should().Be("ana-maria-2");
     }
 }

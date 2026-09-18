@@ -16,11 +16,8 @@ namespace TF.ViewModels
         [StringLength(20, MinimumLength = 6, ErrorMessage = "Password must be between 6 and 20 characters")]
         public required string Password { get; set; }
 
-        [Required(ErrorMessage = "Image is required")]
-        [Url(ErrorMessage = "Image must be a valid URL")]
-        public required string Image { get; set; }
-
-        [Required(ErrorMessage = "Slug is required")]
-        public required string Slug { get; set; }
+        // Image and Slug are not asked for. An avatar is not something a person
+        // should have to supply a URL for to open an account, and the slug is
+        // derived from the name in AccountService.
     }
 }

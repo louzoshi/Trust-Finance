@@ -33,15 +33,12 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     protected static object RegisterPayload(
         string email,
         string password = "Str0ngPass1",
-        string name = "Test User",
-        string? slug = null)
+        string name = "Test User")
         => new
         {
             name,
             email,
             password,
-            image = "https://cdn.trustfinance.dev/avatar.png",
-            slug = slug ?? email.Split('@')[0]
         };
 
     protected Task<HttpResponseMessage> RegisterAsync(string email, string password = "Str0ngPass1")

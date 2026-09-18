@@ -65,8 +65,8 @@ namespace TF.Controllers
 
                 user.Name = model.Name;
                 user.Email = model.Email;
-                user.Image = model.Image;
-                user.Slug = model.Slug;
+                // Slug is assigned once, when the account is created, so that it
+                // stays stable if the display name is later edited.
 
                 context.Users.Update(user);
                 await context.SaveChangesAsync();

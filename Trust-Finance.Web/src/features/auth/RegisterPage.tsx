@@ -4,15 +4,6 @@ import { login, register } from "../../api/account";
 import { ErrorList } from "../../components/ErrorList";
 import { useAuth } from "./AuthContext";
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
 export function RegisterPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
@@ -27,13 +18,7 @@ export function RegisterPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await register({
-        name,
-        email,
-        password,
-        slug: slugify(name),
-        image: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}`,
-      });
+      await register({ name, email, password });
       const token = await login({ email, password });
       signIn(token);
       navigate("/");
