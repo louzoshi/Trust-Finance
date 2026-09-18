@@ -21,6 +21,14 @@ jobs:
       - name: Restore
         run: dotnet restore Trust-Finance.sln
 
+      # `dotnet list package --vulnerable` always exits 0, so the report has to be
+      # inspected: any "vulnerable packages" line fails the build.
+      - name: Vulnerable package scan
+        run: |
+          dotnet list Trust-Finance.sln package --vulnerable --include-transitive \
+            | tee vulnerable.txt
+          ! grep -q "has the following vulnerable packages" vulnerable.txt
+
       - name: Build
         run: dotnet build Trust-Finance.sln --configuration Release --no-restore
 
