@@ -59,6 +59,7 @@ public class TransactionServiceTests
             description: "Almoço",
             amount: 50,
             date: DateTime.UtcNow,
+            type: TransactionType.Expense,
             categoryId: category.Id,
             userId: user.Id
         );
@@ -86,11 +87,67 @@ public class TransactionServiceTests
             description: "Sequestro",
             amount: 50,
             date: DateTime.UtcNow,
+            type: TransactionType.Expense,
             categoryId: adasCategory.Id,
             userId: bob.Id
         );
 
         await action.Should().ThrowAsync<InvalidOperationException>();
         context.Transactions.Count().Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(TransactionType.Income)]
+    [InlineData(TransactionType.Expense)]
+    public async Task Create_Should_Persist_The_Type(TransactionType type)
+    {
+        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
+        var user = await AddUserAsync(context, "teste@gmail.com");
+        var category = await AddCategoryAsync(context, user.Id);
+
+        var service = new TransactionService(context);
+
+        var transaction = await service.CreateAsync(
+            description: "Salário",
+            amount: 4200,
+            date: DateTime.UtcNow,
+            type: type,
+            categoryId: category.Id,
+            userId: user.Id
+        );
+
+        transaction.Type.Should().Be(type);
+        transaction.Amount.Should().BePositive("the sign lives in Type, never in Amount");
+    }
+
+    [Fact]
+    public async Task Update_Should_Change_The_Type()
+    {
+        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
+        var user = await AddUserAsync(context, "teste@gmail.com");
+        var category = await AddCategoryAsync(context, user.Id);
+
+        var service = new TransactionService(context);
+
+        var transaction = await service.CreateAsync(
+            description: "Estorno",
+            amount: 50,
+            date: DateTime.UtcNow,
+            type: TransactionType.Expense,
+            categoryId: category.Id,
+            userId: user.Id
+        );
+
+        var updated = await service.UpdateAsync(
+            id: transaction.Id,
+            description: "Estorno",
+            amount: 50,
+            date: DateTime.UtcNow,
+            type: TransactionType.Income,
+            categoryId: category.Id,
+            userId: user.Id
+        );
+
+        updated.Type.Should().Be(TransactionType.Income);
     }
 }

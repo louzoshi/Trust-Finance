@@ -32,6 +32,7 @@ public class TransactionService
         string description,
         decimal amount,
         DateTime date,
+        TransactionType type,
         int categoryId,
         int userId)
     {
@@ -42,6 +43,7 @@ public class TransactionService
             Description = description,
             Amount = amount,
             Date = date,
+            Type = type,
             CategoryId = categoryId,
             UserId = userId
         };
@@ -57,6 +59,7 @@ public class TransactionService
         string description,
         decimal amount,
         DateTime date,
+        TransactionType type,
         int categoryId,
         int userId)
     {
@@ -68,6 +71,7 @@ public class TransactionService
         transaction.Description = description;
         transaction.Amount = amount;
         transaction.Date = date;
+        transaction.Type = type;
         transaction.CategoryId = categoryId;
 
         await _context.SaveChangesAsync();

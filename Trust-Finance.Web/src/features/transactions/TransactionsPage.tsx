@@ -13,12 +13,17 @@ import {
   formatDate,
   toDateInputValue,
 } from "../../lib/format";
-import type { Transaction, TransactionPayload } from "../../types/api";
+import type {
+  Transaction,
+  TransactionPayload,
+  TransactionType,
+} from "../../types/api";
 
 interface FormState {
   description: string;
   amount: string;
   date: string;
+  type: TransactionType;
   categoryId: string;
 }
 
@@ -26,6 +31,9 @@ const emptyForm: FormState = {
   description: "",
   amount: "",
   date: toDateInputValue(new Date().toISOString()),
+  // Most entries in a personal ledger are payments, so this is the cheaper
+  // default: it is the one the user has to change least often.
+  type: "Expense",
   categoryId: "",
 };
 
@@ -34,6 +42,7 @@ function toPayload(form: FormState): TransactionPayload {
     description: form.description.trim(),
     amount: Number(form.amount),
     date: `${form.date}T00:00:00`,
+    type: form.type,
     categoryId: Number(form.categoryId),
   };
 }
@@ -83,6 +92,7 @@ export function TransactionsPage() {
       description: transaction.description,
       amount: String(transaction.amount),
       date: toDateInputValue(transaction.date),
+      type: transaction.type,
       categoryId: String(transaction.categoryId),
     });
   }
@@ -146,6 +156,19 @@ export function TransactionsPage() {
             />
           </label>
           <label>
+            Type
+            <select
+              value={form.type}
+              onChange={(e) =>
+                setForm({ ...form, type: e.target.value as TransactionType })
+              }
+              required
+            >
+              <option value="Expense">Expense</option>
+              <option value="Income">Income</option>
+            </select>
+          </label>
+          <label>
             Category
             <select
               value={form.categoryId}
@@ -198,6 +221,7 @@ export function TransactionsPage() {
                 <th>Date</th>
                 <th>Description</th>
                 <th>Category</th>
+                <th>Type</th>
                 <th className="num">Amount</th>
                 <th className="actions" aria-label="Actions" />
               </tr>
@@ -208,7 +232,27 @@ export function TransactionsPage() {
                   <td>{formatDate(t.date)}</td>
                   <td>{t.description}</td>
                   <td>{categoryNames.get(t.categoryId) ?? "—"}</td>
-                  <td className="num">{formatCurrency(t.amount)}</td>
+                  <td>
+                    <span
+                      className={
+                        t.type === "Income"
+                          ? "text-income border-income/40 rounded-full border px-2 py-0.5 text-xs"
+                          : "text-expense border-expense/40 rounded-full border px-2 py-0.5 text-xs"
+                      }
+                    >
+                      {t.type}
+                    </span>
+                  </td>
+                  <td
+                    className={
+                      t.type === "Income"
+                        ? "num text-income"
+                        : "num text-expense"
+                    }
+                  >
+                    {t.type === "Income" ? "+" : "−"}
+                    {formatCurrency(t.amount)}
+                  </td>
                   <td className="actions">
                     <button
                       type="button"

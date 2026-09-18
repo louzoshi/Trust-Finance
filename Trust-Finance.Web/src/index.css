@@ -63,6 +63,13 @@
   --color-series-1: #2a78d6;
   --color-series-1-strong: #1c5cab;
   --color-danger: #d03b3b;
+
+  /* Money direction. Deliberately not green/red: that is the one pair red-green
+     colour blindness collapses, and this palette is picked to survive it. Blue
+     against red stays distinguishable, and the +/- sign carries the meaning on
+     its own for anyone the colour fails. Aliases, so they follow the theme. */
+  --color-income: var(--color-series-1);
+  --color-expense: var(--color-danger);
 }
 
 :root {

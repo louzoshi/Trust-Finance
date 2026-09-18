@@ -10,11 +10,18 @@ export interface Category {
   slug: string;
 }
 
+/**
+ * Mirrors TransactionType. Amount is always positive — the sign lives here, so
+ * a balance is income minus expense rather than a sum of signed numbers.
+ */
+export type TransactionType = "Income" | "Expense";
+
 export interface Transaction {
   id: number;
   description: string;
   amount: number;
   date: string; // ISO 8601
+  type: TransactionType;
   categoryId: number;
   userId: number;
 }
@@ -24,6 +31,7 @@ export interface TransactionPayload {
   description: string;
   amount: number;
   date: string;
+  type: TransactionType;
   categoryId: number;
 }
 

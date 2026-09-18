@@ -48,6 +48,7 @@ public class TransactionController : ControllerBase
                 model.Description,
                 model.Amount,
                 model.Date,
+                model.Type,
                 model.CategoryId,
                 userId);
 
@@ -76,6 +77,7 @@ public class TransactionController : ControllerBase
                 model.Description,
                 model.Amount,
                 model.Date,
+                model.Type,
                 model.CategoryId,
                 userId);
 

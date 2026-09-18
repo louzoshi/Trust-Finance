@@ -23,6 +23,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Weekly shop",
             amount = 149.90m,
             date = Date,
+            type = "Expense",
             categoryId = category.Id
         });
 
@@ -49,6 +50,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Precision check",
             amount,
             date = Date,
+            type = "Expense",
             categoryId = category.Id
         });
 
@@ -109,6 +111,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Hijacked",
             amount = 1m,
             date = Date,
+            type = "Expense",
             categoryId = category.Id
         });
 
@@ -129,6 +132,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Monthly shop",
             amount = 320.50m,
             date = Date.AddDays(1),
+            type = "Expense",
             categoryId = category.Id
         });
 
@@ -164,6 +168,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Orphan",
             amount = 10m,
             date = Date,
+            type = "Expense",
             categoryId = 404404
         });
 
@@ -185,6 +190,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Weekly shop",
             amount = 10m,
             date = Date,
+            type = "Expense",
             categoryId = 404404
         });
 
@@ -207,6 +213,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description,
             amount,
             date = Date,
+            type = "Expense",
             categoryId = category.Id
         });
 
@@ -225,6 +232,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description = "Borrowed category",
             amount = 10m,
             date = Date,
+            type = "Expense",
             categoryId = adasCategory.Id
         });
 
@@ -259,6 +267,97 @@ public class TransactionEndpointsTests : IntegrationTestBase
         return (user, category);
     }
 
+
+    [Theory]
+    [InlineData("Income", TransactionType.Income)]
+    [InlineData("Expense", TransactionType.Expense)]
+    public async Task Type_round_trips_as_a_name_rather_than_a_number(
+        string sent, TransactionType expected)
+    {
+        var (user, category) = await SignInWithCategoryAsync();
+
+        var response = await user.Client.PostAsJsonAsync("/api/transactions", new
+        {
+            description = "Monthly pay",
+            amount = 4200m,
+            date = Date,
+            type = sent,
+            categoryId = category.Id
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        await using var context = CreateDbContext();
+        var stored = await context.Transactions.SingleAsync();
+        stored.Type.Should().Be(expected);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain($"\"type\":\"{sent}\"",
+            "the wire format is the name, so a stored 1 or 2 never leaks into the API");
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_payload_with_no_type()
+    {
+        var (user, category) = await SignInWithCategoryAsync();
+
+        var response = await user.Client.PostAsJsonAsync("/api/transactions", new
+        {
+            description = "Untyped",
+            amount = 10m,
+            date = Date,
+            categoryId = category.Id
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an omitted type arrives as 0, which is neither Income nor Expense");
+
+        await using var context = CreateDbContext();
+        (await context.Transactions.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_type_that_is_not_a_known_name()
+    {
+        var (user, category) = await SignInWithCategoryAsync();
+
+        var response = await user.Client.PostAsJsonAsync("/api/transactions", new
+        {
+            description = "Nonsense",
+            amount = 10m,
+            date = Date,
+            type = "Refund",
+            categoryId = category.Id
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        await using var context = CreateDbContext();
+        (await context.Transactions.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Update_can_flip_an_expense_into_income()
+    {
+        var (user, category) = await SignInWithCategoryAsync();
+        var transaction = await CreateTransactionAsync(user.Client, category.Id, "Refunded fee");
+
+        var response = await user.Client.PutAsJsonAsync($"/api/transactions/{transaction.Id}", new
+        {
+            description = "Refunded fee",
+            amount = 42.50m,
+            date = Date,
+            type = "Income",
+            categoryId = category.Id
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var context = CreateDbContext();
+        var stored = await context.Transactions.SingleAsync();
+        stored.Type.Should().Be(TransactionType.Income);
+    }
+
     private static async Task<Transaction> CreateTransactionAsync(
         HttpClient client,
         int categoryId,
@@ -269,6 +368,7 @@ public class TransactionEndpointsTests : IntegrationTestBase
             description,
             amount = 42.50m,
             date = Date,
+            type = "Expense",
             categoryId
         });
 

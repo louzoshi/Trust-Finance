@@ -14,6 +14,7 @@ namespace TF.Data.Mappings
             builder.Property(t => t.Description).IsRequired().HasMaxLength(255);
             builder.Property(t => t.Amount).IsRequired().HasPrecision(18, 2);
             builder.Property(t => t.Date).IsRequired();
+            builder.Property(t => t.Type).IsRequired();
             builder.HasOne(t => t.Category)
                 .WithMany(c => c.Transactions)
                 .HasForeignKey(t => t.CategoryId)

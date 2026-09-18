@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using TF.Models;
 
 namespace TF.ViewModels
 {
@@ -14,6 +15,11 @@ namespace TF.ViewModels
 
         [Required(ErrorMessage = "Date is required")]
         public DateTime Date { get; set; }
+
+        // Income = 1, Expense = 2, so an omitted type arrives as 0 and is rejected
+        // here rather than defaulting to one of them.
+        [EnumDataType(typeof(TransactionType), ErrorMessage = "Type must be Income or Expense")]
+        public TransactionType Type { get; set; }
 
         [Required(ErrorMessage = "Category is required")]
         public int CategoryId { get; set; }

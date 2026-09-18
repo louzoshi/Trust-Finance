@@ -3,6 +3,7 @@ import {
   BarChart,
   CartesianGrid,
   LabelList,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,7 +13,8 @@ import { formatCompactCurrency, formatCurrency } from "../../lib/format";
 
 export interface MonthPoint {
   month: string; // short label, e.g. "Feb"
-  total: number;
+  income: number;
+  expense: number;
 }
 
 export interface CategoryPoint {
@@ -24,6 +26,8 @@ const AXIS_TICK = { fill: "var(--text-muted)", fontSize: 12 } as const;
 
 interface TooltipEntry {
   value?: number | string;
+  name?: string;
+  color?: string;
 }
 
 interface ChartTooltipProps {
@@ -34,17 +38,29 @@ interface ChartTooltipProps {
 
 function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
-  const value = Number(payload[0].value ?? 0);
   return (
     <div className="chart-tooltip">
       <span className="chart-tooltip-label">{label}</span>
-      <span className="chart-tooltip-value">{formatCurrency(value)}</span>
+      {payload.map((entry, i) => (
+        <span
+          key={i}
+          className="chart-tooltip-value"
+          style={entry.color ? { color: entry.color } : undefined}
+        >
+          {payload.length > 1 && entry.name ? `${entry.name}: ` : ""}
+          {formatCurrency(Number(entry.value ?? 0))}
+        </span>
+      ))}
     </div>
   );
 }
 
-/** Monthly transaction volume — single-series column chart. */
-export function MonthlyVolumeChart({ data }: { data: MonthPoint[] }) {
+/**
+ * Income against expense, month by month — the pair that answers whether a month
+ * closed up or down. Blue against red rather than green against red: the palette
+ * has to survive red-green colour blindness, and the legend carries the names.
+ */
+export function MonthlyFlowChart({ data }: { data: MonthPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -70,10 +86,21 @@ export function MonthlyVolumeChart({ data }: { data: MonthPoint[] }) {
           content={<ChartTooltip />}
           cursor={{ fill: "var(--hover-wash)" }}
         />
+        <Legend
+          wrapperStyle={{ fontSize: 12, color: "var(--text-secondary)" }}
+        />
         <Bar
-          dataKey="total"
-          fill="var(--series-1)"
-          barSize={20}
+          dataKey="income"
+          name="Income"
+          fill="var(--color-income)"
+          barSize={14}
+          radius={[4, 4, 0, 0]}
+        />
+        <Bar
+          dataKey="expense"
+          name="Expense"
+          fill="var(--color-expense)"
+          barSize={14}
           radius={[4, 4, 0, 0]}
         />
       </BarChart>
@@ -81,7 +108,7 @@ export function MonthlyVolumeChart({ data }: { data: MonthPoint[] }) {
   );
 }
 
-/** Spend by category — single-series horizontal bars, value at the tip. */
+/** Spending by category — expenses only, value at the tip. */
 export function CategoryBreakdownChart({ data }: { data: CategoryPoint[] }) {
   const height = Math.max(160, data.length * 40 + 24);
   return (
@@ -106,7 +133,7 @@ export function CategoryBreakdownChart({ data }: { data: CategoryPoint[] }) {
         />
         <Bar
           dataKey="total"
-          fill="var(--series-1)"
+          fill="var(--color-expense)"
           barSize={16}
           radius={[0, 4, 4, 0]}
         >

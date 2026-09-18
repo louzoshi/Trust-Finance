@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TF.Data;
 
@@ -11,9 +12,11 @@ using TF.Data;
 namespace Trust_Finance.Migrations
 {
     [DbContext(typeof(TFDataContext))]
-    partial class TFDataContextModelSnapshot : ModelSnapshot
+    [Migration("20260918175906_TransactionHasType")]
+    partial class TransactionHasType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
