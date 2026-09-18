@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TF.Data;
@@ -36,9 +34,6 @@ public class AccountService
         {
             Name = model.Name,
             Email = email ?? string.Empty,
-            Image = string.Empty,
-            Slug = await UniqueSlugFromAsync(model.Name),
-            Role = "user"
         };
 
         user.PasswordHash = _passwordHasher.HashPassword(user, model.Password);
@@ -49,52 +44,6 @@ public class AccountService
         return user;
     }
 
-
-    /// <summary>
-    /// Builds the account's slug from its display name: lowercase, accents stripped,
-    /// anything else collapsed to a single hyphen. A name that is all punctuation
-    /// leaves nothing usable, so it falls back to "user".
-    /// </summary>
-    /// <remarks>
-    /// There is no unique index on Users.Slug, so a repeat would not be an error --
-    /// it would just be confusing. A counter is appended until the slug is free.
-    /// </remarks>
-    private async Task<string> UniqueSlugFromAsync(string name)
-    {
-        var slug = Slugify(name);
-        if (slug.Length == 0)
-            slug = "user";
-
-        var candidate = slug;
-        for (var n = 2; await _context.Users.AsNoTracking()
-                 .AnyAsync(u => u.Slug == candidate); n++)
-        {
-            candidate = $"{slug}-{n}";
-        }
-
-        return candidate;
-    }
-
-    private static string Slugify(string value)
-    {
-        // FormD splits "ç" into "c" + cedilla, so dropping the combining marks
-        // leaves the plain letter behind.
-        var normalized = value.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(normalized.Length);
-
-        foreach (var ch in normalized)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
-                continue;
-
-            if (char.IsAsciiLetterOrDigit(ch))
-                builder.Append(ch);
-            else if (builder.Length > 0 && builder[^1] != '-')
-                builder.Append('-');
-        }
-
-        return builder.ToString().Trim('-');
-    }
 
     public async Task<string> LoginAsync(LoginViewModel model, TokenService tokenService)
     {

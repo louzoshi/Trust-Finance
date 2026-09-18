@@ -6,6 +6,7 @@
 # security
 appsettings.Development.json
 appsettings.json
+.env
 
 
 # User-specific files

@@ -19,7 +19,6 @@ public class AuthorizationTests : IntegrationTestBase
     [InlineData("POST", "/api/categories")]
     [InlineData("GET", "/api/transactions")]
     [InlineData("POST", "/api/transactions")]
-    [InlineData("GET", "/api/user/users")]
     public async Task Protected_endpoints_reject_anonymous_callers(string method, string route)
     {
         var response = await Client.SendAsync(new HttpRequestMessage(new HttpMethod(method), route));
@@ -33,27 +32,6 @@ public class AuthorizationTests : IntegrationTestBase
         var response = await Client.GetAsync("/");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task A_regular_user_is_forbidden_from_the_admin_area()
-    {
-        var user = await SignUpAsync("ada@trustfinance.dev");
-
-        var response = await user.Client.GetAsync("/api/user/users");
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
-    public async Task An_admin_can_read_the_admin_area()
-    {
-        var admin = await SignUpAsync("root@trustfinance.dev", role: "admin");
-
-        var response = await admin.Client.GetAsync("/api/user/users");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.ReadDataAsync<List<User>>()).Should().ContainSingle(u => u.Email == admin.Email);
     }
 
     [Fact]

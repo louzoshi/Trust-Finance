@@ -15,7 +15,6 @@ public static class TestTokens
         string signingKey,
         int userId,
         string name = "Forged User",
-        string role = "admin",
         TimeSpan? lifetime = null)
     {
         var handler = new JwtSecurityTokenHandler();
@@ -26,8 +25,7 @@ public static class TestTokens
             Subject = new ClaimsIdentity(new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-                new Claim(ClaimTypes.Name, name),
-                new Claim(ClaimTypes.Role, role)
+                new Claim(ClaimTypes.Name, name)
             }),
             // NotBefore has to trail Expires, otherwise an already-expired token
             // cannot even be minted.

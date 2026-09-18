@@ -18,8 +18,7 @@ public class TransactionServiceTests
         {
             Name = "Teste",
             Email = email,
-            PasswordHash = "hash",
-            Role = "user"
+            PasswordHash = "hash"
         };
 
         context.Users.Add(user);

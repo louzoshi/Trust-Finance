@@ -18,15 +18,6 @@ namespace TF.Data.Mappings
             builder.Property(u => u.PasswordHash)
                 .IsRequired()
                 .HasMaxLength(200);
-            builder.Property(u => u.Image)
-                .HasMaxLength(200);
-            builder.Property(u => u.Slug)
-                .IsRequired()
-                .HasMaxLength(100);
-            builder.Property(u => u.Role)
-                .IsRequired()
-                .HasMaxLength(50)
-                .HasDefaultValue("user");
         }
     }
 }

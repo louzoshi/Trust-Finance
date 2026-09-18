@@ -45,28 +45,17 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         => Client.PostAsJsonAsync("/api/account/register", RegisterPayload(email, password));
 
     /// <summary>
-    /// Registers a user through the API, optionally promotes it, then signs in and returns
-    /// a client with the resulting bearer token attached.
+    /// Registers a user through the API, then signs in and returns a client with the
+    /// resulting bearer token attached.
     /// </summary>
     protected async Task<TestUser> SignUpAsync(
         string email = "owner@trustfinance.dev",
-        string password = "Str0ngPass1",
-        string role = "user")
+        string password = "Str0ngPass1")
     {
         var registration = await RegisterAsync(email, password);
         registration.EnsureSuccessStatusCode();
 
         var user = await registration.ReadDataAsync<User>();
-
-        if (role != "user")
-        {
-            // Registration always creates a plain user; elevate directly in the database so
-            // the token issued below carries the role we want to exercise.
-            await using var context = CreateDbContext();
-            await context.Users
-                .Where(u => u.Id == user.Id)
-                .ExecuteUpdateAsync(set => set.SetProperty(u => u.Role, role));
-        }
 
         var login = await Client.PostAsJsonAsync("/api/account/login", new { email, password });
         login.EnsureSuccessStatusCode();

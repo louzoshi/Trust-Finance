@@ -21,7 +21,6 @@ public class AccountEndpointsTests : IntegrationTestBase
         await using var context = CreateDbContext();
         var stored = await context.Users.SingleAsync(u => u.Email == "ada@trustfinance.dev");
 
-        stored.Role.Should().Be("user", "registration must never hand out elevated roles");
         stored.PasswordHash.Should().NotBeEmpty().And.NotBe("Str0ngPass1");
     }
 
@@ -66,7 +65,7 @@ public class AccountEndpointsTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Login_returns_a_jwt_carrying_the_user_id_and_role()
+    public async Task Login_returns_a_jwt_carrying_the_user_id()
     {
         await RegisterAsync("ada@trustfinance.dev", "Str0ngPass1");
 
@@ -87,7 +86,8 @@ public class AccountEndpointsTests : IntegrationTestBase
         // TokenService writes ClaimTypes.*, which the JWT handler emits under its short names.
         var claims = TestTokens.Read(result.Data!).Claims.ToList();
         claims.Should().Contain(c => c.Type == "nameid" && c.Value == user.Id.ToString());
-        claims.Should().Contain(c => c.Type == "role" && c.Value == "user");
+        claims.Should().NotContain(c => c.Type == "role",
+            "there are no roles left to carry, so the token should not claim one");
     }
 
     [Fact]

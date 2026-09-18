@@ -57,5 +57,4 @@ export interface RegisterPayload {
 export interface AuthUser {
   id: number;
   name: string;
-  role: string;
 }
