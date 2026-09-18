@@ -1,6 +1,6 @@
 # Trust Finance
 
-Full-stack personal finance manager built with a **.NET 8 REST API** and a
+Full-stack personal finance manager built with a **.NET 10 REST API** and a
 **React + TypeScript** single-page app. Users register, sign in with JWT, and
 track income and expenses across categories, with a dashboard that summarizes
 monthly volume and spending by category.
@@ -15,8 +15,8 @@ business-management system (sales, products, payment methods).
 
 **Backend**
 
-- .NET 8 / ASP.NET Core Web API
-- Entity Framework Core 8 + SQL Server
+- .NET 10 / ASP.NET Core Web API
+- Entity Framework Core 10 + SQL Server
 - JWT bearer authentication, role-based authorization
 - Password hashing via ASP.NET Core `PasswordHasher` (PBKDF2)
 - FluentValidation-style data annotations
@@ -74,7 +74,7 @@ protected routes.
 
 ### Prerequisites
 
-- .NET SDK 8.x
+- .NET SDK 10.x
 - Node.js 20+
 - Docker + Docker Compose
 
