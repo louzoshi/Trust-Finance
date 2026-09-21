@@ -1,18 +1,88 @@
 # Trust Finance
 
-Personal finance and investing manager built as a single **.NET 10 Blazor Server**
-app. Track income and expenses across categories, run a B3 portfolio with average
-price and real returns, browse what you could buy, and set budgets and goals — with
-a dashboard that reports actual net worth, cash plus investments.
+Personal finance and investing for someone living in Brazil, as a single **.NET 10
+Blazor Server** app. It tracks what comes in and goes out across accounts and cards,
+runs a B3 portfolio with average price, payouts and the monthly tax it owes, values a
+fixed-income book on the curve and at market, and reports a net worth that is actually
+the sum of all three.
 
-It runs as one process against one SQLite file. There is no API to host, no
-database server to provision and no build step for the frontend: `dotnet run`
-and the app is up. The interface is in Brazilian Portuguese (R$, `dd/MM/yyyy`,
-comma decimals); the code and these docs are in English.
+It runs as one process against one SQLite file. There is no API to host, no database
+server to provision and no build step for the frontend: `dotnet run` and the app is up.
+The interface is in Brazilian Portuguese (R$, `dd/MM/yyyy`, comma decimals); the code
+and these docs are in English.
 
-Every record — transactions and categories alike — belongs to the user who
-created it, enforced in the service layer and covered by tests that run against
-a real database with the real migrations applied.
+![The dashboard: net worth, the month against the last, six months of income against
+expense, spending by category, portfolio and budgets](docs/images/dashboard.png)
+
+## What makes it more than a spreadsheet
+
+Three things a general-purpose finance app does not do, and that are wrong more often
+than not when they are attempted.
+
+**Fixed income has two honest values, and it shows both.** *Na curva* is the contract —
+principal compounded at the agreed rate, what you receive at maturity. *A mercado* is
+the remaining flow discounted at today's rate — what selling early would fetch. They
+diverge when rates move, and the statement your broker sends you only shows the first.
+
+![The fixed income book: both marks side by side, net of tax and custody, with FGC
+coverage per issuer](docs/images/renda-fixa.png)
+
+**The tax on your B3 trades is computed, not estimated.** Day trade netted per ticker
+per day at 20%, the R$ 20.000 stock exemption applied to *sales* rather than gains,
+FIIs at 20% with no exemption, losses carried forward inside their own bucket, the
+broker's withholding credited, and DARFs under R$ 10 accumulating to the next month.
+
+![The tax screen: month by month, with the per-bucket breakdown of one month
+expanded](docs/images/impostos.png)
+
+**Statements import without ever duplicating a line.** The bank's own identifier
+travels with every imported row under a unique index, so the same OFX file imported
+twice creates nothing the second time — and a row you had already typed by hand is
+recognised and reconciled instead of duplicated.
+
+![The portfolio: allocation, money-weighted return against the CDI, positions with
+yield on cost](docs/images/carteira.png)
+
+## See it running
+
+```bash
+git clone https://github.com/louzoshi/Trust-Finance.git
+cd Trust-Finance
+Auth__Bypass=true Demo__Enabled=true dotnet run --project Trust-Finance.App
+```
+
+That opens on `http://localhost:5062` already signed in, with a year of plausible
+finances: eight months of a ledger across a checking account and a card, a purchase in
+five instalments, recurrences, a B3 portfolio with a split and a year of payouts, and a
+fixed-income book that deliberately passes the FGC limit at one issuer so the warning
+has something to say.
+
+Every date is relative to the day it runs, so the demo never goes stale. It seeds only
+into an empty database and never touches one that already has rows. **Both flags are
+for the demo alone** — `Auth__Bypass` signs every visitor in as the same local account.
+
+## Deploying the demo
+
+The repository carries a `Dockerfile` and a `fly.toml`. The image builds the app in the
+SDK image and ships only the runtime, runs as the non-root account the .NET image
+provides, and serves HTTP on 8080 behind whatever terminates TLS.
+
+```bash
+docker build -t trust-finance .
+docker run -p 8080:8080 -e Auth__Bypass=true -e Demo__Enabled=true trust-finance
+```
+
+On Fly.io, where `fly.toml` already carries the demo flags and forces HTTPS:
+
+```bash
+fly launch --no-deploy   # once, to pick the app name and region
+fly deploy
+```
+
+The demo runs with no volume on purpose: the SQLite file lives on the container's own
+filesystem, so a visitor who deletes everything gets a clean database back on the next
+restart. For an install meant to keep its data, mount a volume at `/data` and leave
+both demo flags off.
 
 ---
 
@@ -24,6 +94,8 @@ a real database with the real migrations applied.
   (PBKDF2 with a per-user salt)
 - Market data from [brapi.dev](https://brapi.dev), with an offline sample provider
   so the app works before any token is configured
+- The Banco Central's open SGS series for the daily CDI, SELIC and IPCA — no token,
+  no account, and a flat estimate clearly labelled as one when it cannot be reached
 - `Blazor-ApexCharts` for the charts
 - Hand-written CSS on a 4px scale, light/dark themes, responsive to phone width
 - xUnit + FluentAssertions, running against in-memory SQLite; Playwright for the
@@ -91,6 +163,9 @@ without a database.
   instalments are split across months with the odd cent on the first; paying the
   statement is a transfer from another account, and each statement reads open,
   paid or overdue.
+![A credit card's statements: purchases grouped by closing date, instalments labelled,
+and the transfer that paid one of them](docs/images/fatura.png)
+
 - **Transfers** — two halves tied by one id, saved and deleted together. Neither
   half counts as income or expense anywhere: moving money between your own
   pockets is not earning or spending it.
@@ -110,6 +185,9 @@ without a database.
   amount stored positive, a date, a category and an account. The list is filtered by period
   (this month, last month, three months, this year, everything, or a custom
   range) with income, expense and balance for whatever is showing.
+![The ledger, filtered by period, with the income, expense and balance of what is
+showing](docs/images/lancamentos.png)
+
 - **Recurring transactions** — salary, rent, subscriptions: weekly, monthly or
   yearly, from a start date, with an optional end. Each occurrence is posted as
   an ordinary transaction the first time the app is opened on or after its date,
@@ -181,7 +259,7 @@ typo cannot silently turn an expense into income.
 
 ---
 
-## Running locally
+## Running it for real
 
 Prerequisite: .NET SDK 10.x. That is the whole list — no Node, no Docker, no
 database server.
@@ -190,9 +268,10 @@ database server.
 dotnet run --project Trust-Finance.App
 ```
 
-Open `http://localhost:5062`, create an account, and you are in. The schema is
-applied on every start, so a fresh install gets its tables and an upgrade gets
-its new columns without anyone running a migration by hand.
+Open `http://localhost:5062`, create an account, and you are in — no demo flags, so
+the sign-in screen appears and the database starts empty. The schema is applied on
+every start, so a fresh install gets its tables and an upgrade gets its new columns
+without anyone running a migration by hand.
 
 ### Where the data lives
 

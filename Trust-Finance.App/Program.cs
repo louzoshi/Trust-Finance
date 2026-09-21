@@ -113,6 +113,15 @@ using (var scope = app.Services.CreateScope())
         app.Logger.LogWarning(
             "Auth:Bypass is ON — every request runs as {Email} and the sign-in screens are skipped.",
             AuthBypass.LocalEmail);
+
+        // The public demo: an empty ledger is filled with a plausible year so the app
+        // opens on something to look at. Only ever into an empty one, so a real install
+        // that happens to run with the flag on is never written over.
+        if (builder.Configuration.GetValue<bool>("Demo:Enabled"))
+        {
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            await DemoData.SeedAsync(db, bypass.UserId, today, app.Logger);
+        }
     }
 }
 
@@ -149,8 +158,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
     url = url.Replace("0.0.0.0", "localhost").Replace("[::]", "localhost").Replace("127.0.0.1", "localhost");
     app.Logger.LogInformation("Trust Finance is running at {Url}", url);
 
-    // Someone who double-clicked the executable is waiting for a window to appear.
-    if (!app.Environment.IsDevelopment())
+    // Someone who double-clicked the executable is waiting for a window to appear — but
+    // a container has no desktop to open one on, and the attempt only costs a warning.
+    // Set Browser:Launch to false wherever nobody is sitting in front of the process.
+    var launchBrowser = app.Configuration.GetValue("Browser:Launch", !app.Environment.IsDevelopment());
+    if (launchBrowser)
         BrowserLauncher.TryOpen(url, app.Logger);
 });
 

@@ -1,0 +1,27 @@
+# Fly.io. HTTPS and the certificate are handled by the platform; the app only speaks
+# HTTP on 8080 behind it.
+app = "trust-finance-demo"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # The public demo: signs every visitor in as one local account and fills an empty
+  # database with a year of plausible finances. Never set these on a real install.
+  Auth__Bypass = "true"
+  Demo__Enabled = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Blazor Server holds a SignalR circuit per visitor, so a machine that stopped would
+  # drop every open page. One machine, always on, is both cheaper and steadier here.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
