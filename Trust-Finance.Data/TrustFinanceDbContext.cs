@@ -14,6 +14,7 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<Trade> Trades => Set<Trade>();
+    public DbSet<FixedIncomeInvestment> FixedIncomeInvestments => Set<FixedIncomeInvestment>();
     public DbSet<CorporateAction> CorporateActions => Set<CorporateAction>();
     public DbSet<Payout> Payouts => Set<Payout>();
     public DbSet<WatchItem> Watchlist => Set<WatchItem>();
@@ -35,6 +36,7 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
         modelBuilder.ApplyConfiguration(new TransactionMap());
         modelBuilder.ApplyConfiguration(new RecurringTransactionMap());
         modelBuilder.ApplyConfiguration(new TradeMap());
+        modelBuilder.ApplyConfiguration(new FixedIncomeInvestmentMap());
         modelBuilder.ApplyConfiguration(new CorporateActionMap());
         modelBuilder.ApplyConfiguration(new PayoutMap());
         modelBuilder.ApplyConfiguration(new WatchItemMap());

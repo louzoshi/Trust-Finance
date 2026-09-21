@@ -38,6 +38,8 @@ Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
   Entities/              User, Account, Category, CategoryRule, Transaction,
                          RecurringTransaction, Trade, Budget, alerts, settings
   Banking/               OFX statements, boleto typed lines, Pix BR Code
+  Markets/               Business-day calendar, 252 rate conventions, yield curve
+                         (flat forward), fixed-income pricing, IR/IOF, FGC
   Finance/               MonthlyFlow: the cash dashboard calculation;
                          Schedule: when a recurrence falls due;
                          CardStatements: statements and account balances
@@ -49,16 +51,18 @@ Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
 Trust-Finance.Data/      EF Core: DbContext, entity mappings, migrations
 Trust-Finance.App/       The Blazor Server app
   Components/Pages/      Dashboard, transactions, accounts, card statements,
-                         import, recurrences, categories, portfolio, payouts,
-                         tax, market, goals, settings, login, register
+                         import, recurrences, categories, portfolio, fixed
+                         income, payouts, tax, market, goals, settings, login,
+                         register
   Components/Shared/     Charts, stat tiles, notification tray, palette
   Components/Layout/     Signed-in shell and the bare auth layout
   Services/              UserAccount, Account, Category, CategoryRule,
-                         Transaction, Recurrence, Import, Investment, Payout,
-                         CorporateAction, Watchlist, Alert, Budget,
+                         Transaction, Recurrence, Import, Investment,
+                         FixedIncome, Payout, CorporateAction, Watchlist, Alert,
+                         Budget,
                          Notification, Settings, UiState
   Services/Market/       Provider abstraction, brapi.dev client, offline catalogue,
-                         Banco Central CDI series
+                         Banco Central series (CDI, SELIC, IPCA)
   Forms/                 Form models and their validation attributes
   wwwroot/               Stylesheet and the pre-paint theme script
 Trust-Finance.Tests/     xUnit tests for the domain and the service layer
@@ -120,6 +124,16 @@ without a database.
   statement would print, and what the same deposits would be worth today had they
   sat at CDI. The daily CDI comes from the Banco Central's open-data series; when
   it cannot be reached the page says so and uses a flat estimate.
+- **Fixed income** — CDB, LCI, LCA, Tesouro and the rest, valued the way a back office
+  values them: **na curva** (principal compounded at the contracted rate, what the
+  holder gets at maturity) next to **a mercado** (the remaining flow discounted at
+  today's rate, what selling early would fetch). Post-fixed paper accrues against the
+  real daily CDI or SELIC from the Banco Central, using CETIP's convention for a
+  percentage of the CDI — each day is taken down to its percentage *before*
+  compounding, not the accumulated factor afterwards. Every figure is also shown net
+  of the regressive income tax, the IOF of the first 30 days and B3's custody fee, so
+  a 12% CDB reads as the ~9,6% it actually pays. **FGC coverage** is computed per
+  issuer against the R$ 250.000 limit and the R$ 1.000.000 four-year ceiling.
 - **Payouts** — dividends, JCP (with the 15% withheld at source) and FII income,
   recorded gross and net, feeding yield on cost per position and the annual
   withholding total.
@@ -273,6 +287,26 @@ What it checks, beyond the happy paths:
   reference vector for "123456789"
 - OFX parses both the SGML flavour banks export and the XML one, with the time
   zone suffix dropped and a comma decimal accepted
+- The business-day calendar matches the published Easter dates and the national
+  holidays that follow from them; 2025 lands on exactly 252 business days and
+  2026 on 249, which is why the convention is a definition and not a count
+- A rate over 252 days returns the annual rate exactly, and half a year is the
+  square root rather than half the rate
+- The percentage-of-CDI convention is checked against the shortcut it is often
+  confused with: compounding day by day is convex, so scaling the accumulated
+  factor understates paper above 100% of the CDI and overstates paper below it
+- Flat-forward interpolation is verified by its defining property — the forward
+  rate between any two interior points of a gap is constant — and the curve is
+  flat outside the quoted vertices rather than extrapolated
+- A prefixado is worth less than its curve when rates rose and more when they
+  fell; discounting at the contracted rate returns the curve exactly; post-fixed
+  paper is not marked at all, and an IPCA+ paper is left on its curve rather
+  than discounted at a nominal rate
+- The regressive table steps on its published boundaries, IOF reaches zero on
+  the thirtieth day and shrinks the base income tax sees, an LCI at 10% beats a
+  CDB at 12% after tax, and Tesouro Selic pays no custody on its first R$ 10.000
+- Splitting R$ 500.000 across two banks is fully covered by the FGC and leaving
+  it at one is not; treasury paper is left out rather than counted as uncovered
 
 **Integration** (`Trust-Finance.IntegrationTests`) boots the whole app in-process
 and talks to it over HTTP: every page renders, an anonymous request is sent to
@@ -307,6 +341,9 @@ Scope is deliberately capped at personal finance. The goal is a v1.0 that a
 handful of real people use, not a business-management system.
 
 **Towards v1.0**
+
+- The real (IPCA) curve, so inflation-linked paper can be marked to market too
+- The ANBIMA reference rates, in place of a flat curve at the CDI
 
 - Paging on the transactions list, for a "Tudo" view that spans years
 - Portfolio value over time from price history, for a time-weighted return

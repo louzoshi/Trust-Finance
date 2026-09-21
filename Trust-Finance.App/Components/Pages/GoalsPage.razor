@@ -4,6 +4,7 @@
 @inject SettingsService Settings
 @inject InvestmentService Investments
 @inject TransactionService Transactions
+@inject FixedIncomeService FixedIncome
 @inject RecurrenceService Recurrences
 @inject CurrentUser CurrentUser
 @inject UiState Ui
@@ -223,7 +224,15 @@ else
         // expense across the whole history, not just this month.
         var transactions = await Transactions.GetAllAsync(_userId);
         var cash = transactions.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
-        _reserve = new GoalProgress("Reserva", Math.Max(cash, 0m), _settings.EmergencyFundGoal);
+
+        // An emergency reserve is money reachable tomorrow: cash, plus the fixed income
+        // that can actually be redeemed on the spot. A three-year prefixado is savings,
+        // not a reserve, and counting it would make the goal read as met when it is not.
+        var liquid = (await FixedIncome.GetBookAsync(_userId)).Open
+            .Where(p => p.Investment.HasDailyLiquidity)
+            .Sum(p => p.NetValue);
+
+        _reserve = new GoalProgress("Reserva", Math.Max(cash, 0m) + liquid, _settings.EmergencyFundGoal);
     }
 
     private void SetLimit(int categoryId, string? raw)

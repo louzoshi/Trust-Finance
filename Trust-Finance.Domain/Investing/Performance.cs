@@ -1,12 +1,10 @@
 using TrustFinance.Domain.Entities;
+using TrustFinance.Domain.Markets;
 
 namespace TrustFinance.Domain.Investing;
 
 /// <summary>Money moving between the investor and the portfolio. Negative goes in, positive comes out.</summary>
 public sealed record CashFlow(DateOnly Date, decimal Amount);
-
-/// <summary>One day's CDI, as the central bank publishes it: a percentage for that day.</summary>
-public sealed record DailyRate(DateOnly Date, decimal Percent);
 
 /// <summary>A point on the "what if it had been CDI" chart.</summary>
 public sealed record PerformancePoint(DateOnly Date, decimal NetContributions, decimal CdiValue);

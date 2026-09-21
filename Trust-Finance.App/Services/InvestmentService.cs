@@ -16,7 +16,7 @@ namespace TrustFinance.App.Services;
 public class InvestmentService(
     IDbContextFactory<TrustFinanceDbContext> factory,
     MarketData market,
-    CdiSeries cdi,
+    BcbSeries cdi,
     TimeProvider clock)
 {
     private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);

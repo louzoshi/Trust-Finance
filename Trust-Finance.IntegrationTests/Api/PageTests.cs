@@ -18,6 +18,7 @@ public class PageTests(TrustFinanceApp app) : IClassFixture<TrustFinanceApp>
     [InlineData("/contas")]
     [InlineData("/importar")]
     [InlineData("/carteira")]
+    [InlineData("/renda-fixa")]
     [InlineData("/proventos")]
     [InlineData("/impostos")]
     [InlineData("/mercado")]

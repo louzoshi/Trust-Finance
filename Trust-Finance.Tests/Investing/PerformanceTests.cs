@@ -1,5 +1,6 @@
 using TrustFinance.Domain.Entities;
 using TrustFinance.Domain.Investing;
+using TrustFinance.Domain.Markets;
 
 namespace TrustFinance.Tests.Investing;
 

@@ -3,6 +3,7 @@
 @inject RecurrenceService Recurrences
 @inject CategoryService Categories
 @inject InvestmentService Investments
+@inject FixedIncomeService FixedIncome
 @inject BudgetService Budgets
 @inject CurrentUser CurrentUser
 @inject ThemeState Theme
@@ -42,7 +43,7 @@ else
 
     <div class="stat-row">
         <StatTile Label="Patrimônio total" Value="@Money.Format(_netWorth)" Sensitive
-                  Hint="@($"{Money.Format(_cash)} em caixa · {Money.Format(_invested)} investido")" />
+                  Hint="@NetWorthHint" />
         <StatTile Label="Receitas no mês" Value="@Money.Format(_summary.Current.Income)" Sensitive
                   Tone="StatTile.StatTone.Income" />
         <StatTile Label="Despesas no mês" Value="@Money.Format(_summary.Current.Expense)" Sensitive
@@ -181,7 +182,20 @@ else
     private Dictionary<int, string> _categoryNames = new();
     private decimal _cash;
     private decimal _invested;
+    private decimal _fixed;
     private decimal _netWorth;
+    private FixedIncomeBook? _fixedIncome;
+
+    private string NetWorthHint
+    {
+        get
+        {
+            var parts = new List<string> { $"{Money.Format(_cash)} em caixa" };
+            if (_invested > 0) parts.Add($"{Money.Format(_invested)} em variável");
+            if (_fixed > 0) parts.Add($"{Money.Format(_fixed)} em renda fixa");
+            return string.Join(" · ", parts);
+        }
+    }
     private string _monthLabel = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -217,13 +231,20 @@ else
         _cash = transactions.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
 
         _portfolio = await Investments.GetPortfolioAsync(userId);
+        _fixedIncome = await FixedIncome.GetBookAsync(userId);
+
         _invested = _portfolio.MarketValue;
-        _netWorth = _cash + _invested;
+
+        // Fixed income enters at its curve: that is what the money is worth to someone
+        // holding to maturity, which is what net worth asks. The mark-to-market number
+        // lives on its own screen, where the difference can be explained.
+        _fixed = _fixedIncome.OnCurve;
+        _netWorth = _cash + _invested + _fixed;
 
         _budgets = await Budgets.GetStatusAsync(userId);
 
-        // The dashboard only has nothing to say when both ledgers are empty.
-        _empty = transactions.Count == 0 && _portfolio.IsEmpty;
+        // The dashboard only has nothing to say when every ledger is empty.
+        _empty = transactions.Count == 0 && _portfolio.IsEmpty && _fixedIncome.IsEmpty;
     }
 
     /// <summary>The two names the domain asks the app layer to supply.</summary>

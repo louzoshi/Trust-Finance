@@ -1,0 +1,355 @@
+@page "/renda-fixa"
+@inject FixedIncomeService FixedIncome
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Renda fixa · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Renda fixa</h1>
+        <p class="page-subtitle">
+            CDB, LCI, Tesouro — marcados na curva e a mercado, líquidos de IR e custódia
+            @if (_book is { IsEmpty: false })
+            {
+                <span>@(_book.IndexIsLive ? " · CDI diário do Banco Central" : " · CDI estimado, Banco Central indisponível")</span>
+            }
+        </p>
+    </div>
+    <a href="carteira" class="btn-soft">Carteira</a>
+</div>
+
+@if (_book is { IsEmpty: false })
+{
+    <div class="stat-row">
+        <StatTile Label="Na curva" Value="@Money.Format(_book.OnCurve)" Sensitive
+                  Hint="@($"{Money.Format(_book.Invested)} aplicados")" />
+        <StatTile Label="A mercado" Value="@Money.Format(_book.MarketValue)" Sensitive
+                  Hint="@(_book.MarkToMarketGap == 0 ? "sem papel prefixado" : $"{Money.Signed(_book.MarkToMarketGap)} contra a curva")"
+                  Tone="@(_book.MarkToMarketGap < 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Neutral)" />
+        <StatTile Label="Líquido hoje" Value="@Money.Format(_book.NetValue)" Sensitive
+                  Hint="depois de IR, IOF e custódia" />
+        <StatTile Label="Ganho bruto" Value="@Money.Signed(_book.GrossGain)" Sensitive
+                  Tone="@(_book.GrossGain < 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Income)"
+                  Hint="antes dos impostos" />
+    </div>
+
+    @if (_book.UnderwaterCount > 0)
+    {
+        <p class="field-hint text-expense">
+            @_book.UnderwaterCount @(_book.UnderwaterCount == 1 ? "papel vale" : "papéis valem") menos que a curva:
+            as taxas subiram desde a compra. Levando ao vencimento você recebe a curva; vendendo antes, o valor de mercado.
+        </p>
+    }
+}
+
+<section class="card">
+    <h2 class="card-title">@(_editingId is null ? "Nova aplicação" : "Editar aplicação")</h2>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Emissor
+            <InputText @bind-Value="_form.Issuer" maxlength="60" placeholder="Banco Inter, Tesouro Nacional…" />
+        </label>
+        <label>
+            Papel
+            <InputSelect @bind-Value="_form.Kind">
+                @foreach (var k in Enum.GetValues<FixedIncomeKind>())
+                {
+                    <option value="@k">@k.Label()</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            Indexador
+            <InputSelect @bind-Value="_form.Index">
+                @foreach (var i in Enum.GetValues<IndexKind>())
+                {
+                    <option value="@i">@i.Label()</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            @_form.RateLabel
+            <InputNumber @bind-Value="_form.Rate" step="0.01" />
+        </label>
+        <label>
+            Valor aplicado
+            <InputNumber @bind-Value="_form.Principal" step="0.01" />
+        </label>
+        <label>
+            Aplicação
+            <InputDate @bind-Value="_form.PurchaseDate" />
+        </label>
+        <label>
+            Vencimento
+            <InputDate @bind-Value="_form.MaturityDate" />
+        </label>
+        <label class="check-row">
+            <InputCheckbox @bind-Value="_form.HasDailyLiquidity" />
+            Liquidez diária
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <ErrorList Messages="_formErrors" />
+    <p class="field-hint">
+        @switch (_form.Kind)
+        {
+            case FixedIncomeKind.Lci or FixedIncomeKind.Lca or FixedIncomeKind.Cri or FixedIncomeKind.Cra or FixedIncomeKind.DebentureIncentivada:
+                <span><strong>Isento de IR</strong> para pessoa física — por isso um papel a 90% do CDI pode render mais que um CDB a 105%.</span>
+                break;
+            case FixedIncomeKind.TesouroSelic:
+                <span>Custódia da B3 de 0,20% a.a., <strong>isenta nos primeiros R$ 10.000</strong>. IR pela tabela regressiva.</span>
+                break;
+            case var k when k.IsTreasury():
+                <span>Custódia da B3 de 0,20% a.a. sobre a posição. IR pela tabela regressiva.</span>
+                break;
+            default:
+                <span>IR pela tabela regressiva (22,5% até 180 dias, 15% após 720) e IOF nos 30 primeiros dias.</span>
+                break;
+        }
+    </p>
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2 class="card-title">Posições</h2>
+        @if (_book is { IsEmpty: false })
+        {
+            <span class="card-subtitle">@_book.Open.Count() em aberto</span>
+        }
+    </div>
+    <ErrorList Messages="_listErrors" />
+    @if (_book is null)
+    {
+        <p class="page-status">Carregando…</p>
+    }
+    else if (_book.Papers.Count == 0)
+    {
+        <p class="page-status">Nenhuma aplicação registrada ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Emissor</th>
+                    <th>Papel</th>
+                    <th>Taxa</th>
+                    <th>Vencimento</th>
+                    <th class="num">Aplicado</th>
+                    <th class="num">Na curva</th>
+                    <th class="num">A mercado</th>
+                    <th class="num">Líquido</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in _book.Papers)
+                {
+                    var p = v.Investment;
+                    <tr class="@(p.IsOpen ? null : "row-muted")">
+                        <td data-label="Emissor">
+                            <strong>@p.Issuer</strong>
+                            @if (p.IsTaxExempt)
+                            {
+                                <span class="badge badge-income badge-tag" title="Isento de IR para pessoa física">isento</span>
+                            }
+                            @if (!p.IsOpen)
+                            {
+                                <span class="badge badge-muted badge-tag">resgatado</span>
+                            }
+                            else if (p.IsMatured(Today))
+                            {
+                                <span class="badge badge-muted badge-tag">vencido</span>
+                            }
+                        </td>
+                        <td data-label="Papel"><span class="badge badge-muted">@p.Kind.Label()</span></td>
+                        <td data-label="Taxa">@p.Describe()</td>
+                        <td data-label="Vencimento">
+                            @p.MaturityDate.ToString("dd/MM/yyyy")
+                            <div class="ticker-name">@(v.RemainingBusinessDays > 0 ? $"{v.RemainingBusinessDays} dias úteis" : "no vencimento")</div>
+                        </td>
+                        <td data-label="Aplicado" class="num sensitive">@Money.Format(p.Principal)</td>
+                        <td data-label="Na curva" class="num sensitive">
+                            @Money.Format(v.OnCurve)
+                            <div class="ticker-name @Money.Tone(v.GrossGain)">@Money.Signed(v.GrossGain)</div>
+                        </td>
+                        <td data-label="A mercado" class="num sensitive">
+                            @if (p.IsMarkedToMarket && v.MarketRate is { } rate)
+                            {
+                                <span class="@(v.IsUnderwater ? "text-expense" : null)">@Money.Format(v.MarketValue)</span>
+                                <div class="ticker-name">a @Money.Percent(rate, signed: false)</div>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                                <div class="ticker-name">@(p.Index == IndexKind.IpcaPlus ? "curva real" : "pós-fixado")</div>
+                            }
+                        </td>
+                        <td data-label="Líquido" class="num sensitive">
+                            @Money.Format(v.NetValue)
+                            <div class="ticker-name">
+                                @if (v.Tax.Total > 0)
+                                {
+                                    <span>IR @((v.Tax.IncomeTaxRate * 100).ToString("0.#"))%</span>
+                                }
+                                else if (p.IsTaxExempt)
+                                {
+                                    <span>sem IR</span>
+                                }
+                                @if (v.CustodyFee > 0)
+                                {
+                                    <span> · custódia @Money.Format(v.CustodyFee)</span>
+                                }
+                            </div>
+                        </td>
+                        <td class="actions">
+                            @if (p.IsOpen)
+                            {
+                                <button type="button" class="btn-ghost" @onclick="() => RedeemAsync(p)">Resgatar</button>
+                            }
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(p)">Editar</button>
+                            <ConfirmButton Message="@($"Excluir a aplicação em {p.Issuer}?")" OnConfirmed="() => DeleteAsync(p)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@if (_book is { Fgc.Count: > 0 })
+{
+    <section class="card">
+        <h2 class="card-title">Cobertura do FGC</h2>
+        <p class="card-subtitle">
+            R$ 250.000 por emissor e R$ 1.000.000 a cada quatro anos. Tesouro não entra: é o próprio soberano.
+        </p>
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Emissor</th>
+                    <th class="num">Total</th>
+                    <th class="num">Coberto</th>
+                    <th class="num">Sem cobertura</th>
+                    <th class="num">Ainda cabe</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _book.Fgc)
+                {
+                    <tr>
+                        <td data-label="Emissor">
+                            @e.Issuer
+                            @if (e.IsOverLimit)
+                            {
+                                <span class="badge badge-expense badge-tag">acima do limite</span>
+                            }
+                        </td>
+                        <td data-label="Total" class="num sensitive">@Money.Format(e.Total)</td>
+                        <td data-label="Coberto" class="num sensitive text-income">@Money.Format(e.Covered)</td>
+                        <td data-label="Sem cobertura" class="num sensitive @(e.Uncovered > 0 ? "text-expense" : null)">
+                            @(e.Uncovered > 0 ? Money.Format(e.Uncovered) : "—")
+                        </td>
+                        <td data-label="Ainda cabe" class="num sensitive">@Money.Format(e.Headroom)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+        @if (_book.UncoveredByFgc > 0)
+        {
+            <p class="field-hint text-expense">
+                @Money.Format(_book.UncoveredByFgc) acima do limite do FGC. Dividir entre emissores diferentes cobre o mesmo dinheiro.
+            </p>
+        }
+    </section>
+}
+
+@code {
+    private int _userId;
+    private FixedIncomeBook? _book;
+    private FixedIncomeForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _form = FixedIncomeForm.Empty(Today);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _book = await FixedIncome.GetBookAsync(_userId);
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await FixedIncome.CreateAsync(_form.ToInvestment(_userId))
+            : await FixedIncome.UpdateAsync(_editingId.Value, _form.ToInvestment(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(FixedIncomeInvestment paper)
+    {
+        _editingId = paper.Id;
+        _form = FixedIncomeForm.From(paper);
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = FixedIncomeForm.Empty(Today);
+    }
+
+    private async Task RedeemAsync(FixedIncomeInvestment paper)
+    {
+        var result = await FixedIncome.RedeemAsync(paper.Id, Today, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+            await LoadAsync();
+    }
+
+    private async Task DeleteAsync(FixedIncomeInvestment paper)
+    {
+        var result = await FixedIncome.DeleteAsync(paper.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == paper.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+}
