@@ -42,6 +42,8 @@ public class User : Notifiable
     public ICollection<Transaction> Transactions { get; private set; } = new List<Transaction>();
     public ICollection<RecurringTransaction> Recurrences { get; private set; } = new List<RecurringTransaction>();
     public ICollection<Trade> Trades { get; private set; } = new List<Trade>();
+    public ICollection<CorporateAction> CorporateActions { get; private set; } = new List<CorporateAction>();
+    public ICollection<Payout> Payouts { get; private set; } = new List<Payout>();
     public ICollection<WatchItem> Watchlist { get; private set; } = new List<WatchItem>();
     public ICollection<PriceAlert> PriceAlerts { get; private set; } = new List<PriceAlert>();
     public ICollection<Budget> Budgets { get; private set; } = new List<Budget>();

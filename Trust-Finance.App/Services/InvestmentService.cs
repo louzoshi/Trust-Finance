@@ -4,6 +4,7 @@ using TrustFinance.Data;
 using TrustFinance.Domain.Entities;
 using TrustFinance.Domain.Investing;
 using TrustFinance.Domain.Notifications;
+using TrustFinance.Domain.Tax;
 
 namespace TrustFinance.App.Services;
 
@@ -12,8 +13,14 @@ namespace TrustFinance.App.Services;
 /// method is scoped to the calling user: a trade id that belongs to somebody else is
 /// indistinguishable from one that does not exist.
 /// </summary>
-public class InvestmentService(IDbContextFactory<TrustFinanceDbContext> factory, MarketData market)
+public class InvestmentService(
+    IDbContextFactory<TrustFinanceDbContext> factory,
+    MarketData market,
+    CdiSeries cdi,
+    TimeProvider clock)
 {
+    private DateOnly Today => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
+
     public async Task<List<Trade>> GetTradesAsync(int userId)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -28,9 +35,45 @@ public class InvestmentService(IDbContextFactory<TrustFinanceDbContext> factory,
     /// <summary>Positions and totals, priced with whatever the market provider could supply.</summary>
     public async Task<PortfolioSummary> GetPortfolioAsync(int userId)
     {
-        var trades = await GetTradesAsync(userId);
+        var (trades, actions, payouts) = await LedgerAsync(userId);
         var quotes = await market.QuotesAsync(userId, Portfolio.Tickers(trades));
-        return Portfolio.Build(trades, quotes);
+        return Portfolio.Build(trades, actions, payouts, quotes, Today);
+    }
+
+    /// <summary>Month by month, what the sales owed the Receita and why.</summary>
+    public async Task<IReadOnlyList<MonthlyTax>> GetTaxReportAsync(int userId)
+    {
+        var (trades, actions, _) = await LedgerAsync(userId);
+        return CapitalGains.Compute(trades, actions);
+    }
+
+    /// <summary>The portfolio against the CDI over the days the money was actually invested.</summary>
+    public async Task<(PerformanceSummary Summary, bool CdiIsLive)> GetPerformanceAsync(int userId)
+    {
+        var (trades, actions, payouts) = await LedgerAsync(userId);
+        var flows = Performance.CashFlows(trades, payouts);
+
+        if (flows.Count == 0)
+            return (Performance.Summarize(flows, 0m, [], Today), true);
+
+        var quotes = await market.QuotesAsync(userId, Portfolio.Tickers(trades));
+        var marketValue = Portfolio.Build(trades, actions, payouts, quotes, Today).MarketValue;
+
+        var indicators = await market.IndicatorsAsync(userId);
+        var (rates, live) = await cdi.GetAsync(flows[0].Date, Today, indicators.CdiAnnual);
+
+        return (Performance.Summarize(flows, marketValue, rates, Today), live);
+    }
+
+    private async Task<(List<Trade> Trades, List<CorporateAction> Actions, List<Payout> Payouts)> LedgerAsync(int userId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+
+        var trades = await db.Trades.AsNoTracking().Where(t => t.UserId == userId).ToListAsync();
+        var actions = await db.CorporateActions.AsNoTracking().Where(a => a.UserId == userId).ToListAsync();
+        var payouts = await db.Payouts.AsNoTracking().Where(p => p.UserId == userId).ToListAsync();
+
+        return (trades, actions, payouts);
     }
 
     public async Task<Result<Trade>> AddTradeAsync(Trade trade)

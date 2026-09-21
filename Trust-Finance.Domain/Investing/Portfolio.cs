@@ -23,25 +23,68 @@ public static class Portfolio
     public static PortfolioSummary Build(
         IEnumerable<Trade> trades,
         IReadOnlyDictionary<string, Quote> quotes)
+        => Build(trades, [], [], quotes, asOf: null);
+
+    /// <param name="asOf">The date the trailing twelve months of payouts are counted back from. Null counts every payout.</param>
+    public static PortfolioSummary Build(
+        IEnumerable<Trade> trades,
+        IEnumerable<CorporateAction> actions,
+        IEnumerable<Payout> payouts,
+        IReadOnlyDictionary<string, Quote> quotes,
+        DateOnly? asOf)
     {
         var books = new Dictionary<string, Book>(StringComparer.OrdinalIgnoreCase);
 
         // Chronological, because average price is path dependent: the same trades in a
-        // different order bank a different realized result.
-        foreach (var t in trades.OrderBy(t => t.Date).ThenBy(t => t.Id))
-        {
-            if (!books.TryGetValue(t.Ticker, out var book))
-                books[t.Ticker] = book = new Book(t.Ticker, t.Class);
+        // different order bank a different realized result. A corporate action on the
+        // same day as a trade applies first — the trade was already done at post-event
+        // prices, so the position it lands on must already be post-event too.
+        var timeline = trades
+            .Select(t => (t.Date, Order: 1, Trade: (Trade?)t, Action: (CorporateAction?)null, Id: t.Id))
+            .Concat(actions.Select(a => (a.Date, Order: 0, Trade: (Trade?)null, Action: (CorporateAction?)a, Id: a.Id)))
+            .OrderBy(e => e.Date).ThenBy(e => e.Order).ThenBy(e => e.Id);
 
-            book.Apply(t);
+        foreach (var e in timeline)
+        {
+            if (e.Trade is { } t)
+            {
+                if (!books.TryGetValue(t.Ticker, out var book))
+                    books[t.Ticker] = book = new Book(t.Ticker, t.Class);
+
+                book.Apply(t);
+            }
+            else if (e.Action is { } a && books.TryGetValue(a.Ticker, out var held))
+            {
+                // An event on a ticker never held is a record with nothing to act on.
+                held.Apply(a);
+            }
         }
+
+        var since = asOf?.AddMonths(-12);
+        var payoutsByTicker = payouts
+            .GroupBy(p => p.Ticker, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var trailing = g.Where(p => since is null || p.PaymentDate > since).ToList();
+                    return (
+                        Total: g.Sum(p => p.NetAmount),
+                        Trailing: trailing.Sum(p => p.NetAmount),
+                        // Per share, so the yield survives the position growing or shrinking
+                        // after the payout: what one share earned over what one share cost.
+                        PerShare: trailing.Sum(p => p.Quantity > 0 ? p.NetAmount / p.Quantity : 0m));
+                },
+                StringComparer.OrdinalIgnoreCase);
 
         var positions = new List<Position>();
         foreach (var book in books.Values)
         {
-            // A ticker fully sold still carries its realized result; one that netted to
-            // nothing at all is just noise and is dropped.
-            if (!book.IsOpen && book.RealizedPnL == 0m)
+            payoutsByTicker.TryGetValue(book.Ticker, out var received);
+
+            // A ticker fully sold still carries its realized result and what it paid out;
+            // one that netted to nothing at all is just noise and is dropped.
+            if (!book.IsOpen && book.RealizedPnL == 0m && received.Total == 0m)
                 continue;
 
             quotes.TryGetValue(book.Ticker, out var quote);
@@ -51,7 +94,10 @@ public static class Portfolio
                 book.Quantity,
                 book.AveragePrice,
                 Math.Round(book.RealizedPnL, 2),
-                book.IsOpen ? quote : null));
+                book.IsOpen ? quote : null,
+                Math.Round(received.Total, 2),
+                Math.Round(received.Trailing, 2),
+                received.PerShare));
         }
 
         positions = [.. positions.OrderByDescending(p => p.MarketValue).ThenBy(p => p.Ticker)];
@@ -78,7 +124,9 @@ public static class Portfolio
             UnrealizedPnL: open.Sum(p => p.UnrealizedPnL),
             RealizedPnL: positions.Sum(p => p.RealizedPnL),
             DayChange: dayChanges.Count > 0 ? dayChanges.Sum(p => p.DayChange!.Value) : null,
-            TickersWithoutQuote: open.Count(p => !p.HasQuote));
+            TickersWithoutQuote: open.Count(p => !p.HasQuote),
+            PayoutsReceived: positions.Sum(p => p.PayoutsReceived),
+            PayoutsTrailingYear: positions.Sum(p => p.PayoutsTrailingYear));
     }
 
     /// <summary>Every distinct ticker the ledger touches, for asking a provider about them in one call.</summary>
@@ -86,45 +134,4 @@ public static class Portfolio
         [.. trades.Select(t => t.Ticker)
                   .Distinct(StringComparer.OrdinalIgnoreCase)
                   .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)];
-
-    /// <summary>Running average price, quantity and banked result for one ticker.</summary>
-    private sealed class Book(string ticker, AssetClass assetClass)
-    {
-        public string Ticker { get; } = ticker;
-        public AssetClass Class { get; private set; } = assetClass;
-        public decimal Quantity { get; private set; }
-        public decimal AveragePrice { get; private set; }
-        public decimal RealizedPnL { get; private set; }
-
-        public bool IsOpen => Quantity > 0;
-
-        public void Apply(Trade t)
-        {
-            // A later trade is the better witness to what the asset is: a ticker first
-            // entered under the wrong class gets corrected by the next one.
-            Class = t.Class;
-
-            if (t.Side == TradeSide.Buy)
-            {
-                var cost = t.Gross + t.Fees;
-                var total = Quantity + t.Quantity;
-                AveragePrice = total > 0 ? (Quantity * AveragePrice + cost) / total : 0m;
-                Quantity = total;
-                return;
-            }
-
-            // Selling more than is held would produce a negative position and a nonsense
-            // average. Cap it: the ledger is wrong, but the summary stays readable.
-            var sold = Math.Min(t.Quantity, Quantity);
-            if (sold <= 0)
-                return;
-
-            var proceeds = sold * t.UnitPrice - t.Fees;
-            RealizedPnL += proceeds - sold * AveragePrice;
-            Quantity -= sold;
-
-            if (Quantity == 0)
-                AveragePrice = 0m;
-        }
-    }
 }

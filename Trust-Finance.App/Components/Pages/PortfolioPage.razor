@@ -1,5 +1,6 @@
 @page "/carteira"
 @inject InvestmentService Investments
+@inject CorporateActionService Actions
 @inject MarketData Market
 @inject CurrentUser CurrentUser
 @inject TimeProvider Clock
@@ -161,6 +162,29 @@ else
         </div>
     }
 
+    @if (_performance is { } perf && perf.Series.Count > 0)
+    {
+        <section class="card">
+            <h2 class="card-title">Rentabilidade contra o CDI</h2>
+            <p class="card-subtitle">
+                De @perf.From.ToString("dd/MM/yyyy") até hoje, pelos dias em que o dinheiro esteve investido
+                @(_cdiIsLive ? " · CDI diário do Banco Central" : " · CDI estimado, Banco Central indisponível")
+            </p>
+            <div class="stat-row">
+                <StatTile Label="Rentabilidade (TIR)" Value="@Money.Percent(perf.AnnualReturn)"
+                          Hint="@($"ao ano · CDI de {Money.Percent(perf.CdiAnnual, signed: false)} no mesmo período")"
+                          Tone="@Tone(perf.AnnualReturn ?? 0)" />
+                <StatTile Label="% do CDI" Value="@(perf.PercentOfCdi is { } pc ? pc.ToString("N0") + "%" : "—")"
+                          Hint="@(perf.PercentOfCdi is { } r ? (r >= 100 ? "bateu o CDI" : "ficou abaixo do CDI") : "sem base de comparação")"
+                          Tone="@Tone(perf.PercentOfCdi is { } v ? v - 100 : 0)" />
+                <StatTile Label="Contra ficar no CDI" Value="@Money.Signed(perf.GainOverCdi)" Sensitive
+                          Hint="@($"{Money.Format(perf.MarketValue)} hoje · {Money.Format(perf.CdiValue)} se fosse CDI")"
+                          Tone="@Tone(perf.GainOverCdi)" />
+            </div>
+            <PerformanceChart Data="perf.Series" />
+        </section>
+    }
+
     <section class="card">
         <div class="card-header">
             <h2 class="card-title">Posições</h2>
@@ -176,6 +200,7 @@ else
                         <th class="num">Preço médio</th>
                         <th class="num">Cotação</th>
                         <th class="num">Valor</th>
+                        <th class="num" title="Proventos dos últimos 12 meses sobre o custo">Yield on cost</th>
                         <th class="num">Resultado</th>
                     </tr>
                 </thead>
@@ -209,6 +234,17 @@ else
                                 }
                             </td>
                             <td data-label="Valor" class="num sensitive">@(p.IsOpen ? Money.Format(p.MarketValue) : "—")</td>
+                            <td data-label="Yield on cost" class="num">
+                                @if (p.PayoutsTrailingYear > 0)
+                                {
+                                    <span>@Money.Percent(p.YieldOnCost, signed: false)</span>
+                                    <div class="ticker-name sensitive">@Money.Format(p.PayoutsTrailingYear)</div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
                             <td data-label="Resultado" class="num sensitive @Money.Tone(p.TotalPnL)">
                                 @Money.Signed(p.TotalPnL)
                                 @if (p.IsOpen && p.UnrealizedPercent is not null)
@@ -274,6 +310,98 @@ else
             </div>
         }
     </section>
+
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">Eventos corporativos</h2>
+            <button type="button" class="btn-soft" @onclick="() => _actionFormOpen = !_actionFormOpen">
+                @(_actionFormOpen ? "Fechar" : "Novo evento")
+            </button>
+        </div>
+        <p class="card-subtitle">Desdobramentos, grupamentos e bonificações — ajustam quantidade e preço médio</p>
+        @if (_actionFormOpen)
+        {
+            <EditForm Model="_actionForm" OnValidSubmit="SaveActionAsync" class="inline-form">
+                <label>
+                    Ticker
+                    <InputText @bind-Value="_actionForm.Ticker" maxlength="20" placeholder="MGLU3" />
+                </label>
+                <label>
+                    Evento
+                    <InputSelect @bind-Value="_actionForm.Kind">
+                        @foreach (var k in Enum.GetValues<CorporateActionKind>())
+                        {
+                            <option value="@k">@k.Label()</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>
+                    @(_actionForm.Kind switch
+                    {
+                        CorporateActionKind.Split => "1 ação vira quantas",
+                        CorporateActionKind.ReverseSplit => "Quantas ações viram 1",
+                        _ => "Bonificação (%)"
+                    })
+                    <InputNumber @bind-Value="_actionForm.Ratio" step="any" />
+                </label>
+                @if (_actionForm.Kind == CorporateActionKind.Bonus)
+                {
+                    <label>
+                        Custo unitário informado
+                        <InputNumber @bind-Value="_actionForm.BonusUnitCost" step="0.01" />
+                    </label>
+                }
+                <label>
+                    Data
+                    <InputDate @bind-Value="_actionForm.Date" />
+                </label>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" disabled="@_saving">
+                        @(_editingActionId is null ? "Registrar" : "Salvar")
+                    </button>
+                    <button type="button" class="btn-ghost" @onclick="CancelActionEdit">Cancelar</button>
+                </div>
+            </EditForm>
+            <ErrorList Messages="_actionErrors" />
+        }
+        @if (_actions.Count == 0)
+        {
+            <p class="page-status">Nenhum evento registrado.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Ativo</th>
+                            <th>Evento</th>
+                            <th>Proporção</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in _actions)
+                        {
+                            <tr>
+                                <td data-label="Data">@a.Date.ToString("dd/MM/yyyy")</td>
+                                <td data-label="Ativo"><span class="ticker">@a.Ticker</span></td>
+                                <td data-label="Evento"><span class="badge badge-muted">@a.Kind.Label()</span></td>
+                                <td data-label="Proporção">@a.Describe()</td>
+                                <td class="actions">
+                                    <button type="button" class="btn-ghost" @onclick="() => StartActionEdit(a)">Editar</button>
+                                    <ConfirmButton Message="@($"Excluir o evento de {a.Ticker}?")" OnConfirmed="() => DeleteActionAsync(a)">
+                                        Excluir
+                                    </ConfirmButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
 }
 
 @code {
@@ -290,6 +418,15 @@ else
     private List<string> _formErrors = [];
     private List<string> _listErrors = [];
 
+    private PerformanceSummary? _performance;
+    private bool _cdiIsLive;
+
+    private List<CorporateAction> _actions = [];
+    private CorporateActionForm _actionForm = new();
+    private int? _editingActionId;
+    private bool _actionFormOpen;
+    private List<string> _actionErrors = [];
+
     private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
 
     protected override async Task OnInitializedAsync()
@@ -298,6 +435,7 @@ else
 
         _userId = await CurrentUser.IdAsync();
         _form = TradeForm.Empty(Today);
+        _actionForm = CorporateActionForm.Empty(Today);
         _provider = await Market.ProviderAsync(_userId);
         await LoadAsync();
     }
@@ -305,7 +443,58 @@ else
     private async Task LoadAsync()
     {
         _trades = await Investments.GetTradesAsync(_userId);
+        _actions = await Actions.GetAllAsync(_userId);
         _summary = await Investments.GetPortfolioAsync(_userId);
+        (_performance, _cdiIsLive) = await Investments.GetPerformanceAsync(_userId);
+    }
+
+    // ------------------------------------------------------------ corporate actions
+
+    private async Task SaveActionAsync()
+    {
+        _saving = true;
+        _actionErrors = [];
+
+        var result = _editingActionId is null
+            ? await Actions.CreateAsync(_actionForm.ToAction(_userId))
+            : await Actions.UpdateAsync(_editingActionId.Value, _actionForm.ToAction(_userId));
+
+        if (result.Failed)
+            _actionErrors = result.Messages;
+        else
+        {
+            CancelActionEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartActionEdit(CorporateAction action)
+    {
+        _editingActionId = action.Id;
+        _actionForm = CorporateActionForm.From(action);
+        _actionFormOpen = true;
+        _actionErrors = [];
+    }
+
+    private void CancelActionEdit()
+    {
+        _editingActionId = null;
+        _actionFormOpen = false;
+        _actionForm = CorporateActionForm.Empty(Today);
+    }
+
+    private async Task DeleteActionAsync(CorporateAction action)
+    {
+        var result = await Actions.DeleteAsync(action.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingActionId == action.Id) CancelActionEdit();
+            await LoadAsync();
+        }
     }
 
     private async Task RefreshAsync()

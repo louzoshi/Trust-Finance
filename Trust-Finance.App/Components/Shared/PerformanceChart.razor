@@ -1,0 +1,34 @@
+@using ApexCharts
+@inject ThemeState Theme
+
+@* What went in, and what it would be at CDI — the two lines a bank statement draws. *@
+<ApexChart @key="Theme.Current" TItem="PerformancePoint" Options="_options" Height="240">
+    <ApexPointSeries TItem="PerformancePoint" Items="Data" Name="Aportes líquidos" SeriesType="SeriesType.Line"
+                     XValue="@(p => Label(p))" YValue="@(p => p.NetContributions)" />
+    <ApexPointSeries TItem="PerformancePoint" Items="Data" Name="Mesmos aportes no CDI" SeriesType="SeriesType.Line"
+                     XValue="@(p => Label(p))" YValue="@(p => p.CdiValue)" />
+</ApexChart>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PerformancePoint> Data { get; set; } = [];
+
+    private ApexChartOptions<PerformancePoint> _options = new();
+
+    protected override void OnParametersSet()
+    {
+        var palette = ChartPalette.For(Theme.IsDark);
+        _options = palette.BaseOptions<PerformancePoint>();
+        _options.Colors = [palette.Muted, palette.Income];
+        _options.Stroke = new Stroke { Curve = Curve.Straight, Width = 2 };
+        _options.Xaxis = new XAxis
+        {
+            AxisTicks = new AxisTicks { Show = false },
+            AxisBorder = new AxisBorder { Color = palette.Axis },
+            TickAmount = 6
+        };
+        _options.Yaxis = [new YAxis { Labels = new YAxisLabels { Formatter = ChartPalette.CompactCurrencyFormatter } }];
+        _options.Legend = new Legend { Position = LegendPosition.Bottom };
+    }
+
+    private static string Label(PerformancePoint p) => p.Date.ToString("MMM/yy").TrimEnd('.');
+}

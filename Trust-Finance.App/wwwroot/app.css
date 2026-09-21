@@ -692,6 +692,27 @@ a {
   max-width: 420px;
 }
 
+/* The tax table: a month row opens its per-bucket breakdown underneath. */
+.tax-row { cursor: pointer; }
+.tax-row:hover td { background: var(--hover-wash); }
+
+.tax-detail > td {
+  padding: var(--space-2) var(--space-3) var(--space-4);
+  background: var(--hover-wash);
+}
+
+.data-table.nested {
+  font-size: var(--text-sm);
+}
+
+.rules {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
 /* ------------------------------------------------------------------- forms */
 
 label {

@@ -1,0 +1,194 @@
+@page "/impostos"
+@inject InvestmentService Investments
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Impostos · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Impostos</h1>
+        <p class="page-subtitle">Apuração mensal de renda variável — o que cada mês deve à Receita</p>
+    </div>
+</div>
+
+@if (_report is null)
+{
+    <p class="page-status">Apurando…</p>
+}
+else if (_report.Count == 0)
+{
+    <div class="empty-state card">
+        <h2>Nada a apurar</h2>
+        <p>
+            O imposto nasce na venda. Registre as operações na carteira e cada mês com
+            venda aparece aqui com a base, a alíquota, o prejuízo compensado e o DARF.
+        </p>
+        <a class="btn-primary" href="carteira">Ir para a carteira</a>
+    </div>
+}
+else
+{
+    <div class="stat-row">
+        <StatTile Label="DARF a pagar" Value="@Money.Format(_pendingDarf)" Sensitive
+                  Hint="@(_pendingDue is { } d ? $"vence {d:dd/MM/yyyy}" : "nada em aberto")"
+                  Tone="@(_pendingDarf > 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Neutral)" />
+        <StatTile Label="Pago ou devido no ano" Value="@Money.Format(_taxThisYear)" Sensitive
+                  Hint="@($"soma dos DARFs de {Today.Year}")" />
+        <StatTile Label="Prejuízo a compensar" Value="@Money.Format(_lossCarried)" Sensitive
+                  Hint="reduz o imposto dos próximos ganhos" />
+        <StatTile Label="IR retido na fonte" Value="@Money.Format(_withheldThisYear)" Sensitive
+                  Hint="dedo-duro, abatido do DARF" />
+    </div>
+
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">Mês a mês</h2>
+            <span class="card-subtitle">meses com venda, do mais recente ao mais antigo</span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Mês</th>
+                    <th class="num">Vendas em ações</th>
+                    <th>Isenção</th>
+                    <th class="num">Base tributável</th>
+                    <th class="num">Imposto</th>
+                    <th class="num">IRRF</th>
+                    <th class="num">DARF</th>
+                    <th>Vencimento</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _report.OrderByDescending(m => m.FirstDay))
+                {
+                    var open = _open == m.FirstDay;
+                    <tr class="tax-row" @onclick="() => Toggle(m.FirstDay)">
+                        <td data-label="Mês"><strong>@m.FirstDay.ToString("MMM/yyyy")</strong></td>
+                        <td data-label="Vendas em ações" class="num sensitive">@Money.Format(m.StockSales)</td>
+                        <td data-label="Isenção">
+                            @if (m.StockSales > 0)
+                            {
+                                <span class="badge @(m.StockGainsExempt ? "badge-income" : "badge-muted")">@(m.StockGainsExempt ? "até 20 mil" : "acima de 20 mil")</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                        <td data-label="Base tributável" class="num sensitive">@Money.Format(m.Buckets.Sum(b => b.TaxableBase))</td>
+                        <td data-label="Imposto" class="num sensitive">@Money.Format(m.TaxDue)</td>
+                        <td data-label="IRRF" class="num sensitive">@(m.WithheldCreditUsed > 0 ? "−" + Money.Format(m.WithheldCreditUsed) : "—")</td>
+                        <td data-label="DARF" class="num sensitive @(m.DarfAmount > 0 ? "text-expense" : null)">
+                            @if (m.DarfDeferred)
+                            {
+                                <span class="badge badge-muted" title="Abaixo de R$ 10 — acumula para o mês seguinte">acumula @Money.Format(m.NetTax + m.DarfDeferredIn)</span>
+                            }
+                            else
+                            {
+                                @Money.Format(m.DarfAmount)
+                            }
+                        </td>
+                        <td data-label="Vencimento">@(m.DarfAmount > 0 ? m.DarfDueDate.ToString("dd/MM/yyyy") : "—")</td>
+                    </tr>
+                    @if (open)
+                    {
+                        <tr class="tax-detail">
+                            <td colspan="8">
+                                <table class="data-table nested">
+                                    <thead>
+                                        <tr>
+                                            <th>Modalidade</th>
+                                            <th class="num">Vendas</th>
+                                            <th class="num">Resultado</th>
+                                            <th class="num">Isento</th>
+                                            <th class="num">Prejuízo usado</th>
+                                            <th class="num">Base</th>
+                                            <th class="num">Alíquota</th>
+                                            <th class="num">Imposto</th>
+                                            <th class="num">Prejuízo restante</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var b in m.Buckets)
+                                        {
+                                            <tr>
+                                                <td data-label="Modalidade">@b.Bucket.Label()</td>
+                                                <td data-label="Vendas" class="num sensitive">@Money.Format(b.Sales)</td>
+                                                <td data-label="Resultado" class="num sensitive @Money.Tone(b.Result)">@Money.Signed(b.Result)</td>
+                                                <td data-label="Isento" class="num sensitive">@(b.ExemptGain > 0 ? Money.Format(b.ExemptGain) : "—")</td>
+                                                <td data-label="Prejuízo usado" class="num sensitive">@(b.LossOffset > 0 ? Money.Format(b.LossOffset) : "—")</td>
+                                                <td data-label="Base" class="num sensitive">@Money.Format(b.TaxableBase)</td>
+                                                <td data-label="Alíquota" class="num">@((b.Bucket.Rate() * 100).ToString("0"))%</td>
+                                                <td data-label="Imposto" class="num sensitive">@Money.Format(b.Tax)</td>
+                                                <td data-label="Prejuízo restante" class="num sensitive">@(b.LossCarriedForward > 0 ? Money.Format(b.LossCarriedForward) : "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                @if (m.Withheld > 0 && m.WithheldCreditUsed < m.Withheld)
+                                {
+                                    <p class="field-hint">IRRF de @Money.Format(m.Withheld) retido no mês; @Money.Format(m.Withheld - m.WithheldCreditUsed) fica de crédito para os meses seguintes do ano.</p>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">Como é calculado</h2>
+        <ul class="rules">
+            <li><strong>Day trade</strong> é o que foi comprado e vendido no mesmo dia, no mesmo ativo, até a menor das duas quantidades. Alíquota de 20%, sem isenção, com 1% retido na fonte sobre o ganho do dia.</li>
+            <li><strong>Ações</strong> vendidas até R$ 20.000 no mês deixam o ganho do mês isento. O teto é sobre as vendas, não sobre o lucro. ETFs e BDRs não entram na conta nem na isenção. Prejuízo em mês isento continua compensável.</li>
+            <li><strong>FIIs</strong> pagam 20% sobre o ganho em qualquer prazo, sem isenção. <strong>Cripto</strong> segue a mesma lógica das ações com teto de R$ 35.000.</li>
+            <li><strong>Prejuízo</strong> só compensa ganho da mesma modalidade, sem prazo para expirar.</li>
+            <li><strong>IRRF</strong> de 0,005% sobre cada venda comum (dispensado quando o total do mês não passa de R$ 1) abate o imposto do mês e, se sobrar, o dos meses seguintes do mesmo ano.</li>
+            <li><strong>DARF</strong> código 6015, vencendo no último dia útil do mês seguinte. Abaixo de R$ 10 não é emitido: acumula até chegar lá.</li>
+            <li>Preço médio e custos seguem a carteira: taxas entram no custo da compra e saem do valor da venda. Arredondamento a duas casas pela regra do meio para o par (ABNT 5891).</li>
+        </ul>
+        <p class="field-hint">
+            Apuração estimada a partir das operações registradas. Feriados nacionais não entram no cálculo do vencimento. Confira com o informe da corretora antes de pagar.
+        </p>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<MonthlyTax>? _report;
+    private DateOnly? _open;
+    private decimal _pendingDarf;
+    private DateOnly? _pendingDue;
+    private decimal _taxThisYear;
+    private decimal _lossCarried;
+    private decimal _withheldThisYear;
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await CurrentUser.IdAsync();
+        _report = await Investments.GetTaxReportAsync(userId);
+
+        if (_report.Count == 0)
+            return;
+
+        // "To pay" is the DARFs whose due date has not passed, plus anything deferred under R$ 10.
+        var pending = _report.Where(m => m.DarfAmount > 0 && m.DarfDueDate >= Today).ToList();
+        _pendingDarf = pending.Sum(m => m.DarfAmount);
+        _pendingDue = pending.Count > 0 ? pending.Min(m => m.DarfDueDate) : null;
+
+        _taxThisYear = _report.Where(m => m.Year == Today.Year).Sum(m => m.DarfAmount);
+        _withheldThisYear = _report.Where(m => m.Year == Today.Year).Sum(m => m.Withheld);
+
+        var last = _report[^1];
+        _lossCarried = last.Buckets.Sum(b => b.LossCarriedForward);
+
+        _open = last.FirstDay;
+    }
+
+    private void Toggle(DateOnly month) => _open = _open == month ? null : month;
+}

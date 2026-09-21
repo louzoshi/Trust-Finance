@@ -1,0 +1,215 @@
+@page "/proventos"
+@inject PayoutService Payouts
+@inject InvestmentService Investments
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Proventos · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Proventos</h1>
+        <p class="page-subtitle">Dividendos, JCP e rendimentos de FII — o que a carteira paga</p>
+    </div>
+    <a href="carteira" class="btn-soft">Carteira</a>
+</div>
+
+@if (_summary is not null)
+{
+    <div class="stat-row">
+        <StatTile Label="Recebido em 12 meses" Value="@Money.Format(_summary.PayoutsTrailingYear)" Sensitive
+                  Hint="líquido de IR" />
+        <StatTile Label="Yield on cost" Value="@Money.Percent(_summary.YieldOnCost, signed: false)"
+                  Hint="12 meses sobre o custo das posições" />
+        <StatTile Label="Recebido no total" Value="@Money.Format(_summary.PayoutsReceived)" Sensitive
+                  Hint="desde o primeiro provento" />
+        <StatTile Label="IR retido no ano" Value="@Money.Format(_withheldThisYear)" Sensitive
+                  Hint="JCP tem 15% na fonte" />
+    </div>
+}
+
+<section class="card">
+    <h2 class="card-title">@(_editingId is null ? "Novo provento" : "Editar provento")</h2>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Ticker
+            <InputText @bind-Value="_form.Ticker" maxlength="20" placeholder="HGLG11" />
+        </label>
+        <label>
+            Tipo
+            <InputSelect @bind-Value="_form.Kind">
+                @foreach (var k in Enum.GetValues<PayoutKind>())
+                {
+                    <option value="@k">@k.Label()</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            Pagamento
+            <InputDate @bind-Value="_form.PaymentDate" />
+        </label>
+        <label>
+            Quantidade
+            <InputNumber @bind-Value="_form.Quantity" step="any" />
+        </label>
+        <label>
+            Valor bruto
+            <InputNumber @bind-Value="_form.GrossAmount" step="0.01" />
+        </label>
+        <label>
+            IR retido
+            <InputNumber @bind-Value="_form.WithheldTax" step="0.01" placeholder="@_form.SuggestedTax.ToString("0.00")" />
+        </label>
+        <label>
+            Observação
+            <InputText @bind-Value="_form.Note" maxlength="200" placeholder="opcional" />
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <p class="field-hint">
+        Dividendos e rendimentos de FII chegam inteiros. JCP tem 15% retido na fonte —
+        deixe o IR em branco para usar esse cálculo, ou informe o valor do informe da corretora.
+    </p>
+    <ErrorList Messages="_formErrors" />
+</section>
+
+<section class="card">
+    <div class="card-header">
+        <h2 class="card-title">Histórico</h2>
+        @if (_payouts is { Count: > 0 })
+        {
+            <span class="card-subtitle">@_payouts.Count no total</span>
+        }
+    </div>
+    <ErrorList Messages="_listErrors" />
+    @if (_payouts is null)
+    {
+        <p class="page-status">Carregando proventos…</p>
+    }
+    else if (_payouts.Count == 0)
+    {
+        <p class="page-status">Nenhum provento registrado ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Pagamento</th>
+                    <th>Ativo</th>
+                    <th>Tipo</th>
+                    <th class="num">Qtd.</th>
+                    <th class="num">Por cota</th>
+                    <th class="num">Bruto</th>
+                    <th class="num">IR</th>
+                    <th class="num">Líquido</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in _payouts)
+                {
+                    <tr>
+                        <td data-label="Pagamento">@p.PaymentDate.ToString("dd/MM/yyyy")</td>
+                        <td data-label="Ativo"><span class="ticker">@p.Ticker</span></td>
+                        <td data-label="Tipo"><span class="badge badge-muted">@p.Kind.Label()</span></td>
+                        <td data-label="Qtd." class="num">@p.Quantity.ToString("0.########")</td>
+                        <td data-label="Por cota" class="num">@p.GrossPerShare.ToString("C4")</td>
+                        <td data-label="Bruto" class="num sensitive">@Money.Format(p.GrossAmount)</td>
+                        <td data-label="IR" class="num sensitive">@(p.WithheldTax > 0 ? Money.Format(p.WithheldTax) : "—")</td>
+                        <td data-label="Líquido" class="num sensitive text-income">@Money.Format(p.NetAmount)</td>
+                        <td class="actions">
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(p)">Editar</button>
+                            <ConfirmButton Message="@($"Excluir o provento de {p.Ticker}?")" OnConfirmed="() => DeleteAsync(p)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private int _userId;
+    private List<Payout>? _payouts;
+    private PortfolioSummary? _summary;
+    private decimal _withheldThisYear;
+    private PayoutForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _form = PayoutForm.Empty(Today);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _payouts = await Payouts.GetAllAsync(_userId);
+        _summary = await Investments.GetPortfolioAsync(_userId);
+        _withheldThisYear = _payouts.Where(p => p.PaymentDate.Year == Today.Year).Sum(p => p.WithheldTax);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Payouts.CreateAsync(_form.ToPayout(_userId))
+            : await Payouts.UpdateAsync(_editingId.Value, _form.ToPayout(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(Payout payout)
+    {
+        _editingId = payout.Id;
+        _form = PayoutForm.From(payout);
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = PayoutForm.Empty(Today);
+    }
+
+    private async Task DeleteAsync(Payout payout)
+    {
+        var result = await Payouts.DeleteAsync(payout.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == payout.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+}

@@ -39,18 +39,23 @@ Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
                          Budget, alerts, settings
   Finance/               MonthlyFlow: the cash dashboard calculation;
                          Schedule: when a recurrence falls due
-  Investing/             Portfolio: positions, average price, realized/unrealized
+  Investing/             Portfolio: positions, average price, realized/unrealized;
+                         Performance: XIRR and the CDI comparison
+  Tax/                   CapitalGains: the monthly DARF computation
   Planning/              Budgets, goals and the notification rules
   Slug.cs                "Mercado & Padaria" -> "mercado-padaria"
 Trust-Finance.Data/      EF Core: DbContext, entity mappings, migrations
 Trust-Finance.App/       The Blazor Server app
   Components/Pages/      Dashboard, transactions, recurrences, categories,
-                         portfolio, market, goals, settings, login, register
+                         portfolio, payouts, tax, market, goals, settings, login,
+                         register
   Components/Shared/     Charts, stat tiles, notification tray, palette
   Components/Layout/     Signed-in shell and the bare auth layout
   Services/              Account, Category, Transaction, Recurrence, Investment,
-                         Watchlist, Alert, Budget, Notification, Settings, UiState
-  Services/Market/       Provider abstraction, brapi.dev client, offline catalogue
+                         Payout, CorporateAction, Watchlist, Alert, Budget,
+                         Notification, Settings, UiState
+  Services/Market/       Provider abstraction, brapi.dev client, offline catalogue,
+                         Banco Central CDI series
   Forms/                 Form models and their validation attributes
   wwwroot/               Stylesheet and the pre-paint theme script
 Trust-Finance.Tests/     xUnit tests for the domain and the service layer
@@ -83,7 +88,25 @@ without a database.
   28th of February and back on the 31st of March — occurrences are computed from
   the start date, never from the previous one, so they cannot drift.
 - **Portfolio** — buys and sells with fees, weighted average price, realized and
-  unrealized results, allocation by asset class and day change.
+  unrealized results, allocation by asset class, day change and yield on cost.
+- **Performance against the CDI** — a money-weighted annual return (XIRR over the
+  dated cash flows) next to the CDI over the same days, the "% do CDI" a bank
+  statement would print, and what the same deposits would be worth today had they
+  sat at CDI. The daily CDI comes from the Banco Central's open-data series; when
+  it cannot be reached the page says so and uses a flat estimate.
+- **Payouts** — dividends, JCP (with the 15% withheld at source) and FII income,
+  recorded gross and net, feeding yield on cost per position and the annual
+  withholding total.
+- **Corporate actions** — splits, reverse splits and bonus shares at the cost the
+  issuer declared, applied to quantity and average price on their date so a
+  1:10 split does not read as a 90% loss.
+- **Monthly capital-gains tax** — the DARF each month owes on B3 sales: day trade
+  netted per ticker per day at 20%, stock sales under R$ 20.000 exempt (the
+  ceiling is on sales, not gains; ETFs and BDRs neither count nor qualify), FIIs
+  at 20% with no exemption, crypto exempt under R$ 35.000, losses carried forward
+  inside their own bucket, the broker's 0,005% and 1% withholding credited, DARFs
+  under R$ 10 accumulating, and the due date on the last business day of the
+  following month.
 - **Market** — browse stocks, FIIs, ETFs, BDRs, fixed income and crypto with
   quotes, dividend yield and where each class is traded. Watchlist and price
   alerts included.
@@ -201,6 +224,18 @@ What it checks, beyond the happy paths:
   keeps the rows it posted
 - The period filter keeps both ends of the range and never shows another
   user's rows
+- A split multiplies quantity and divides the average price, a reverse split
+  drops the fraction, a bonus adds shares at the declared cost; an event on the
+  same day as a trade applies first, and one before the first trade is ignored
+- Yield on cost is per share over average price, so selling half the position
+  after a payout does not double it
+- The tax computation is checked against worked examples: the R$ 20.000 ceiling
+  is on sales, ETFs do not qualify, a loss in an exempt month still carries, a
+  loss in FIIs does not shelter stocks, a day with both sides splits at the
+  matched quantity, a DARF of R$ 6 waits for the next R$ 6, withholding carries
+  within the year, a split on a quiet day still reaches the next sale
+- XIRR recovers a known rate, compounding at CDI skips the deposit day, the
+  annualization is on 252 business days
 
 **Integration** (`Trust-Finance.IntegrationTests`) boots the whole app in-process
 and talks to it over HTTP: every page renders, an anonymous request is sent to
@@ -237,8 +272,9 @@ handful of real people use, not a business-management system.
 **Towards v1.0**
 
 - Paging on the transactions list, for a "Tudo" view that spans years
-- Dividends received as first-class records, feeding a real yield-on-cost
-- Portfolio value over time, charted against CDI
+- Portfolio value over time from price history, for a time-weighted return
+  next to the money-weighted one
+- National holidays in the DARF due date
 - Editing an account: display name, email, password
 - Exporting to CSV, and a backup of the database file that does not involve
   finding it on disk
@@ -247,6 +283,7 @@ handful of real people use, not a business-management system.
 
 - CSV / OFX statement import and broker note (nota de corretagem) parsing
 - Multiple accounts (checking, credit card, cash)
-- Tax helpers: monthly sales ceiling, darf estimates
+- The annual return: "Bens e direitos" at cost, exempt income, income taxed
+  at source, straight from the ledger
 - A public deployment over HTTPS, for the people who would rather not run it
   themselves

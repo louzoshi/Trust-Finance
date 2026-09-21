@@ -39,6 +39,9 @@ builder.Services.AddSingleton(TimeProvider.System);
 // Investing, planning and the notification tray.
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<InvestmentService>();
+builder.Services.AddScoped<PayoutService>();
+builder.Services.AddScoped<CorporateActionService>();
+builder.Services.AddSingleton<CdiSeries>();
 builder.Services.AddScoped<WatchlistService>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<BudgetService>();
@@ -51,6 +54,15 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(nameof(BrapiMarketData), client =>
 {
     client.BaseAddress = new Uri(BrapiMarketData.BaseAddress);
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("TrustFinance/1.0");
+});
+
+// The central bank's open-data API needs no token; a short timeout keeps a slow day
+// from holding the portfolio page, which falls back to a flat estimate.
+builder.Services.AddHttpClient(CdiSeries.ClientName, client =>
+{
+    client.BaseAddress = new Uri(CdiSeries.BaseAddress);
     client.Timeout = TimeSpan.FromSeconds(8);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("TrustFinance/1.0");
 });

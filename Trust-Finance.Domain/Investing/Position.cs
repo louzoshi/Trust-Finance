@@ -11,7 +11,10 @@ public sealed record Position(
     decimal Quantity,
     decimal AveragePrice,
     decimal RealizedPnL,
-    Quote? Quote)
+    Quote? Quote,
+    decimal PayoutsReceived = 0m,
+    decimal PayoutsTrailingYear = 0m,
+    decimal PayoutsPerShareTrailingYear = 0m)
 {
     /// <summary>What it cost to build what is still held, average price times quantity.</summary>
     public decimal Invested => Math.Round(Quantity * AveragePrice, 2);
@@ -29,8 +32,17 @@ public sealed record Position(
     public decimal? UnrealizedPercent =>
         Quote is not null && Invested > 0 ? UnrealizedPnL / Invested * 100m : null;
 
-    /// <summary>Everything this ticker has produced: paper profit plus what past sales already banked.</summary>
-    public decimal TotalPnL => UnrealizedPnL + RealizedPnL;
+    /// <summary>Everything this ticker has produced: paper profit, what past sales banked, and what it paid out.</summary>
+    public decimal TotalPnL => UnrealizedPnL + RealizedPnL + PayoutsReceived;
+
+    /// <summary>
+    /// Yield on cost: what one share paid out over the last twelve months, over what one
+    /// share cost. Measured against cost rather than price because that is the question
+    /// the holder has — what is my money earning — not what a buyer today would get.
+    /// Per share rather than in total, so selling half the position after a payout does
+    /// not double the number.
+    /// </summary>
+    public decimal? YieldOnCost => IsOpen && AveragePrice > 0 ? PayoutsPerShareTrailingYear / AveragePrice * 100m : null;
 
     /// <summary>Move since the previous close, for the whole position.</summary>
     public decimal? DayChange => Quote?.Change is { } c ? Math.Round(Quantity * c, 2) : null;
@@ -49,9 +61,22 @@ public sealed record PortfolioSummary(
     decimal UnrealizedPnL,
     decimal RealizedPnL,
     decimal? DayChange,
-    int TickersWithoutQuote)
+    int TickersWithoutQuote,
+    decimal PayoutsReceived = 0m,
+    decimal PayoutsTrailingYear = 0m)
 {
-    public decimal TotalPnL => UnrealizedPnL + RealizedPnL;
+    public decimal TotalPnL => UnrealizedPnL + RealizedPnL + PayoutsReceived;
+
+    /// <summary>The open positions' yields on cost, weighted by what each one cost.</summary>
+    public decimal? YieldOnCost
+    {
+        get
+        {
+            var open = Positions.Where(p => p.IsOpen && p.YieldOnCost is not null).ToList();
+            var cost = open.Sum(p => p.Invested);
+            return cost > 0 ? open.Sum(p => p.YieldOnCost!.Value * p.Invested) / cost : null;
+        }
+    }
 
     public decimal? ReturnPercent => Invested > 0 ? UnrealizedPnL / Invested * 100m : null;
 
