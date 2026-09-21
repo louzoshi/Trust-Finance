@@ -7,8 +7,8 @@ on:
     branches: [master]
 
 jobs:
-  api:
-    name: API (build & test)
+  build:
+    name: Build & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,36 +32,29 @@ jobs:
       - name: Build
         run: dotnet build Trust-Finance.sln --configuration Release --no-restore
 
+      # The suite runs the real migrations against in-memory SQLite, so it needs
+      # no database service and no container.
       - name: Unit tests
         run: >
           dotnet test Trust-Finance.Tests/Trust-Finance.Tests.csproj
           --configuration Release --no-build --verbosity normal
 
-      # Testcontainers starts a real SQL Server via the Docker daemon that is
-      # preinstalled on the GitHub-hosted runners.
-      - name: Integration tests (Testcontainers + SQL Server)
+      # Boots the app in-process and drives it over HTTP. The brapi.dev calls are
+      # excluded: a rate limit or an outage there is not a regression here.
+      - name: Integration tests
         run: >
           dotnet test Trust-Finance.IntegrationTests/Trust-Finance.IntegrationTests.csproj
           --configuration Release --no-build --verbosity normal
+          --filter "Category!=Network"
 
-  web:
-    name: Web (build)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Trust-Finance.Web
-    steps:
-      - uses: actions/checkout@v4
+      # The E2E suite launches the built app as a process and drives it with a real
+      # Chromium, which the Playwright package downloads on demand.
+      - name: Install Playwright browser
+        run: >
+          pwsh Trust-Finance.E2ETests/bin/Release/net10.0/playwright.ps1
+          install --with-deps chromium
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: Trust-Finance.Web/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: Build (type-check + bundle)
-        run: npm run build
+      - name: End-to-end tests
+        run: >
+          dotnet test Trust-Finance.E2ETests/Trust-Finance.E2ETests.csproj
+          --configuration Release --no-build --verbosity normal

@@ -1,0 +1,33 @@
+@using ApexCharts
+@inject ThemeState Theme
+
+@* Allocation by asset class — a donut, because the question is "what share", not "how much". *@
+<ApexChart @key="Theme.Current" TItem="Allocation" Options="_options" Height="260">
+    <ApexPointSeries TItem="Allocation" Items="Data" Name="Alocação" SeriesType="SeriesType.Donut"
+                     XValue="@(a => a.Class.Label())" YAggregate="@(g => g.Sum(a => a.Value))" />
+</ApexChart>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Allocation> Data { get; set; } = [];
+
+    private ApexChartOptions<Allocation> _options = new();
+
+    protected override void OnParametersSet()
+    {
+        var palette = ChartPalette.For(Theme.IsDark);
+        _options = palette.BaseOptions<Allocation>();
+        _options.Colors = [.. palette.Categorical];
+        _options.Legend = new Legend { Position = LegendPosition.Bottom };
+        _options.DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Formatter = "function (v) { return v.toFixed(0) + '%'; }"
+        };
+        _options.Stroke = new Stroke { Width = 0 };
+        _options.Tooltip = new Tooltip
+        {
+            Theme = Theme.IsDark ? Mode.Dark : Mode.Light,
+            Y = new TooltipY { Formatter = ChartPalette.CurrencyFormatter }
+        };
+    }
+}

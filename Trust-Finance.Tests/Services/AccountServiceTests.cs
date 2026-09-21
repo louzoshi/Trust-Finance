@@ -1,69 +1,102 @@
-using FluentAssertions;
-using TF.Services;
-using TF.ViewModels;
-using Trust_Finance.Tests.Fixtures;
-using Xunit;
+using TrustFinance.App.Services;
+using TrustFinance.Tests.Fixtures;
 
-namespace Trust_Finance.Tests.Services;
+namespace TrustFinance.Tests.Services;
 
-public class AccountServiceTests
+public class AccountServiceTests : IDisposable
 {
+    private readonly SqliteDatabase _db = new();
+    private readonly AccountService _service;
+
+    public AccountServiceTests() => _service = new AccountService(_db);
+
+    public void Dispose() => _db.Dispose();
+
     [Fact]
-    public async Task Register_Should_Create_User_With_Hashed_Password()
+    public async Task Register_Should_Store_A_Hash_Not_The_Password()
     {
-        // Arrange
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var service = new AccountService(context);
+        var result = await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
 
-        var model = new RegisterUserViewModel
-        {
-            Name = "Teste",
-            Email = "teste@gmail.com",
-            Password = "teste123"
-        };
+        result.Success.Should().BeTrue();
+        result.Value!.Id.Should().BePositive();
+        result.Value.PasswordHash.Should().NotBeNullOrEmpty().And.NotContain("segredo123");
+    }
 
-        // Act
-        var user = await service.RegisterAsync(model);
+    [Fact]
+    public async Task Register_Should_Normalize_The_Email()
+    {
+        var result = await _service.RegisterAsync("Carla", "  Carla@Example.COM ", "segredo123");
 
-        // Assert
-        user.Should().NotBeNull();
-        user.Email.Should().Be("teste@gmail.com");
-        user.PasswordHash.Should().NotBe("teste123");
-
-        context.Users.Should().HaveCount(1);
+        result.Value!.Email.Should().Be("carla@example.com");
     }
 
     [Fact]
     public async Task Register_Should_Fail_When_Email_Already_Exists()
     {
-        // Arrange
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var service = new AccountService(context);
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
 
-        var firstModel = new RegisterUserViewModel
+        var result = await _service.RegisterAsync("Outra Carla", "CARLA@example.com", "outrasenha");
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("já está cadastrado");
+    }
+
+    [Theory]
+    [InlineData("nao-e-email", "segredo123", "Email")]
+    [InlineData("carla@example.com", "curta", "password")]
+    [InlineData("carla@example.com", "", "password")]
+    public async Task Register_Should_Reject_Bad_Input_With_A_Notification(string email, string password, string key)
+    {
+        var result = await _service.RegisterAsync("Carla", email, password);
+
+        result.Failed.Should().BeTrue();
+        result.Notifications.Should().Contain(n => n.Key == key);
+    }
+
+    [Fact]
+    public async Task Register_Should_Reject_A_Name_That_Is_Too_Short()
+    {
+        var result = await _service.RegisterAsync("Jo", "jo@example.com", "segredo123");
+
+        result.Failed.Should().BeTrue();
+        result.Notifications.Should().Contain(n => n.Key == "Name");
+    }
+
+    [Fact]
+    public async Task ValidateCredentials_Should_Return_The_User_For_The_Right_Password()
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        var user = await _service.ValidateCredentialsAsync("carla@example.com", "segredo123");
+
+        user.Should().NotBeNull();
+        user!.Name.Should().Be("Carla");
+    }
+
+    [Theory]
+    [InlineData("carla@example.com", "errada")]
+    [InlineData("ninguem@example.com", "segredo123")]
+    [InlineData("nao-e-email", "segredo123")]
+    public async Task ValidateCredentials_Should_Return_Null_For_Wrong_Email_Or_Password(string email, string password)
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        (await _service.ValidateCredentialsAsync(email, password)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("qualquer")]
+    public async Task ValidateCredentials_Should_Never_Accept_The_Passwordless_Local_Account(string password)
+    {
+        // The account Auth:Bypass owns is written straight to the table with no hash.
+        // It has to stay unreachable from the login form, whatever is typed at it.
+        await using (var db = _db.CreateDbContext())
         {
-            Name = "Teste",
-            Email = "duplicado@gmail.com",
-            Password = "123456"
-        };
+            db.Users.Add(global::TrustFinance.Domain.Entities.User.Local("Local", AuthBypass.LocalEmail));
+            await db.SaveChangesAsync();
+        }
 
-        var secondModel = new RegisterUserViewModel
-        {
-            Name = "Teste",
-            Email = "duplicado@gmail.com",
-            Password = "123456"
-        };
-
-        await service.RegisterAsync(firstModel);
-
-        // Act
-        Func<Task> action = async () => await service.RegisterAsync(secondModel);
-
-        // Assert
-        var ex = await action.Should().ThrowAsync<InvalidOperationException>();
-        ex.WithMessage("Email already registered");
-
-        // Ensures a second user was not created
-        context.Users.Should().HaveCount(1);
+        (await _service.ValidateCredentialsAsync(AuthBypass.LocalEmail, password)).Should().BeNull();
     }
 }

@@ -1,0 +1,425 @@
+@page "/mercado"
+@inject MarketData Market
+@inject WatchlistService Watchlist
+@inject AlertService Alerts
+@inject CurrentUser CurrentUser
+
+<PageTitle>Mercado · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Mercado</h1>
+        <p class="page-subtitle">
+            @if (_provider is not null)
+            {
+                @($"Cotações por {_provider.Name}")
+                @if (!_provider.IsLive)
+                {
+                    <text> — </text><a href="configuracoes">conecte a B3 ao vivo</a>
+                }
+            }
+        </p>
+    </div>
+    <button type="button" class="btn-soft" @onclick="RefreshAsync">Atualizar</button>
+</div>
+
+@if (_indicators is not null)
+{
+    <div class="stat-row">
+        <StatTile Label="CDI" Value="@Money.Percent(_indicators.CdiAnnual, signed: false)" Hint="ao ano" />
+        <StatTile Label="SELIC" Value="@Money.Percent(_indicators.SelicAnnual, signed: false)" Hint="meta anual" />
+        <StatTile Label="IPCA" Value="@Money.Percent(_indicators.IpcaAnnual, signed: false)" Hint="12 meses" />
+        <StatTile Label="Na watchlist" Value="@_watchlist.Count.ToString()" Hint="ativos acompanhados" />
+    </div>
+}
+
+<div class="tabs">
+    <button type="button" class="tab @(_tab == Tab.Browse ? "selected" : null)" @onclick="() => _tab = Tab.Browse">Explorar</button>
+    <button type="button" class="tab @(_tab == Tab.Watchlist ? "selected" : null)" @onclick="ShowWatchlistAsync">
+        Watchlist @(_watchlist.Count > 0 ? $"({_watchlist.Count})" : "")
+    </button>
+    <button type="button" class="tab @(_tab == Tab.Alerts ? "selected" : null)" @onclick="ShowAlertsAsync">
+        Alertas @(_alerts.Count > 0 ? $"({_alerts.Count})" : "")
+    </button>
+</div>
+
+@if (_tab == Tab.Browse)
+{
+    <section class="card">
+        <div class="card-header">
+            <div class="chip-row">
+                <button type="button" class="chip @(_class is null ? "selected" : null)" @onclick="() => FilterAsync(null)">Todos</button>
+                @foreach (var c in AssetClasses.All)
+                {
+                    <button type="button" class="chip @(_class == c ? "selected" : null)" @onclick="() => FilterAsync(c)">@c.Label()</button>
+                }
+            </div>
+            <input class="search-input" type="search" placeholder="Buscar ticker ou nome…"
+                   value="@_search" @oninput="SearchAsync" aria-label="Buscar ativo" />
+        </div>
+
+        @if (_loading)
+        {
+            <p class="page-status">Carregando cotações…</p>
+        }
+        else if (_results.Count == 0)
+        {
+            <p class="page-status">Nenhum ativo encontrado@(string.IsNullOrWhiteSpace(_search) ? "." : $" para \"{_search}\".")</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Ativo</th>
+                            <th>Classe</th>
+                            <th class="num">Cotação</th>
+                            <th class="num">Variação</th>
+                            <th class="num">Div. yield</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var q in _results)
+                        {
+                            <tr>
+                                <td data-label="Ativo">
+                                    <button type="button" class="btn-ghost" style="padding:0" @onclick="() => Select(q)">
+                                        <span class="ticker">@q.Ticker</span>
+                                    </button>
+                                    <div class="ticker-name">@q.Name</div>
+                                </td>
+                                <td data-label="Classe"><span class="badge badge-muted">@q.Class.Singular()</span></td>
+                                <td data-label="Cotação" class="num">@Money.Format(q.Price)</td>
+                                <td data-label="Variação" class="num @Money.Tone(q.ChangePercent)">@Money.Percent(q.ChangePercent)</td>
+                                <td data-label="Div. yield" class="num">@(q.DividendYield is { } y ? Money.Percent(y, signed: false) : "—")</td>
+                                <td class="actions">
+                                    <button type="button" class="btn-ghost" @onclick="() => Select(q)">Detalhes</button>
+                                    @if (IsWatched(q.Ticker))
+                                    {
+                                        <button type="button" class="btn-ghost" @onclick="() => UnwatchAsync(q.Ticker)">Seguindo</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn-ghost" @onclick="() => WatchAsync(q)">Seguir</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (_selected is not null)
+    {
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">@_selected.Ticker — @_selected.Name</h2>
+                    <p class="card-subtitle">@Brokers.Venue(_selected.Class)</p>
+                </div>
+                <button type="button" class="btn-ghost" @onclick="() => _selected = null">Fechar</button>
+            </div>
+
+            <div class="stat-row">
+                <StatTile Label="Cotação" Value="@Money.Format(_selected.Price)" Hint="último preço" />
+                <StatTile Label="Variação" Value="@Money.Percent(_selected.ChangePercent)"
+                          Tone="@(_selected.IsUp ? StatTile.StatTone.Income : _selected.IsDown ? StatTile.StatTone.Expense : StatTile.StatTone.Neutral)"
+                          Hint="desde o fechamento anterior" />
+                <StatTile Label="Dividend yield"
+                          Value="@(_selected.DividendYield is { } y ? Money.Percent(y, signed: false) : "—")"
+                          Hint="12 meses" />
+                <StatTile Label="Classe" Value="@_selected.Class.Singular()" Hint="@Brokers.Venue(_selected.Class)" />
+            </div>
+
+            <div class="split-grid">
+                <div>
+                    <h3 class="card-title">Onde comprar</h3>
+                    <p class="card-subtitle">Corretoras com acesso a esta classe, em ordem alfabética</p>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <tbody>
+                                @foreach (var broker in Brokers.For(_selected.Class))
+                                {
+                                    <tr>
+                                        <td data-label="Corretora">
+                                            <a href="@broker.Url" target="_blank" rel="noopener noreferrer">@broker.Name</a>
+                                            <div class="ticker-name">@broker.Note</div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="card-title">Criar alerta de preço</h3>
+                    <p class="card-subtitle">Avisamos no sino quando o preço cruzar o alvo</p>
+                    <div class="inline-form">
+                        <label>
+                            Condição
+                            <select @bind="_alertDirection">
+                                <option value="@AlertDirection.Below">Cair até</option>
+                                <option value="@AlertDirection.Above">Subir até</option>
+                            </select>
+                        </label>
+                        <label>
+                            Preço-alvo
+                            <input type="number" step="0.01" min="0" @bind="_alertTarget" />
+                        </label>
+                        <div class="form-actions">
+                            <button type="button" class="btn-primary" @onclick="CreateAlertAsync">Criar alerta</button>
+                        </div>
+                    </div>
+                    <ErrorList Messages="_alertErrors" />
+                </div>
+            </div>
+        </section>
+    }
+
+    <p class="field-hint">
+        As informações desta tela são apenas informativas e não constituem recomendação de
+        investimento. Rentabilidade passada não garante resultado futuro.
+    </p>
+}
+else if (_tab == Tab.Watchlist)
+{
+    <section class="card">
+        <h2 class="card-title">Watchlist</h2>
+        @if (_watchlist.Count == 0)
+        {
+            <p class="page-status">Você ainda não segue nenhum ativo. Use “Seguir” na aba Explorar.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Ativo</th>
+                            <th class="num">Cotação</th>
+                            <th class="num">Variação</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _watchlist)
+                        {
+                            var quote = _watchQuotes.GetValueOrDefault(item.Ticker);
+                            <tr>
+                                <td data-label="Ativo">
+                                    <span class="ticker">@item.Ticker</span>
+                                    <div class="ticker-name">@(quote?.Name ?? item.Class.Singular())</div>
+                                </td>
+                                <td data-label="Cotação" class="num">@(quote is not null ? Money.Format(quote.Price) : "—")</td>
+                                <td data-label="Variação" class="num @Money.Tone(quote?.ChangePercent)">@Money.Percent(quote?.ChangePercent)</td>
+                                <td class="actions">
+                                    <ConfirmButton Message="@($"Deixar de seguir {item.Ticker}?")" OnConfirmed="() => UnwatchAsync(item.Ticker)">
+                                        Remover
+                                    </ConfirmButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+else
+{
+    <section class="card">
+        <h2 class="card-title">Alertas de preço</h2>
+        <ErrorList Messages="_alertErrors" />
+        @if (_alerts.Count == 0)
+        {
+            <p class="page-status">Nenhum alerta criado. Abra os detalhes de um ativo na aba Explorar para criar um.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Ativo</th>
+                            <th>Condição</th>
+                            <th class="num">Alvo</th>
+                            <th>Situação</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in _alerts)
+                        {
+                            <tr>
+                                <td data-label="Ativo"><span class="ticker">@a.Ticker</span></td>
+                                <td data-label="Condição">@(a.Direction == AlertDirection.Above ? "Subir até" : "Cair até")</td>
+                                <td data-label="Alvo" class="num">@Money.Format(a.TargetPrice)</td>
+                                <td data-label="Situação">
+                                    @if (a.IsArmed)
+                                    {
+                                        <span class="badge badge-muted">Monitorando</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-income">Disparado em @a.TriggeredAt!.Value.ToLocalTime().ToString("dd/MM")</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    <ConfirmButton Message="@($"Excluir o alerta de {a.Ticker}?")" OnConfirmed="() => DeleteAlertAsync(a)">
+                                        Excluir
+                                    </ConfirmButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private enum Tab { Browse, Watchlist, Alerts }
+
+    private int _userId;
+    private Tab _tab = Tab.Browse;
+    private IMarketDataProvider? _provider;
+    private MarketIndicators? _indicators;
+
+    private AssetClass? _class;
+    private string _search = string.Empty;
+    private bool _loading = true;
+    private IReadOnlyList<Quote> _results = [];
+    private Quote? _selected;
+
+    private List<WatchItem> _watchlist = [];
+    private IReadOnlyDictionary<string, Quote> _watchQuotes = new Dictionary<string, Quote>();
+    private List<PriceAlert> _alerts = [];
+
+    private AlertDirection _alertDirection = AlertDirection.Below;
+    private decimal _alertTarget;
+    private List<string> _alertErrors = [];
+
+    // A search fires on every keystroke; only the last one within the window is run, so
+    // typing "PETR4" is one request rather than five.
+    private CancellationTokenSource _debounce = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _provider = await Market.ProviderAsync(_userId);
+        _indicators = await Market.IndicatorsAsync(_userId);
+        _watchlist = await Watchlist.GetAsync(_userId);
+        _alerts = await Alerts.GetAsync(_userId);
+        await LoadResultsAsync();
+    }
+
+    private async Task LoadResultsAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _results = await Market.BrowseAsync(_userId, _class, _search);
+        _loading = false;
+    }
+
+    private async Task FilterAsync(AssetClass? assetClass)
+    {
+        _class = assetClass;
+        await LoadResultsAsync();
+    }
+
+    private async Task SearchAsync(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+
+        await _debounce.CancelAsync();
+        _debounce.Dispose();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+
+        try
+        {
+            await Task.Delay(300, token);
+            await LoadResultsAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            // Superseded by a later keystroke.
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        Market.Invalidate(_userId);
+        _indicators = await Market.IndicatorsAsync(_userId);
+        await LoadResultsAsync();
+        await LoadWatchQuotesAsync();
+    }
+
+    private void Select(Quote quote)
+    {
+        _selected = quote;
+        _alertTarget = Math.Round(quote.Price, 2);
+        _alertDirection = AlertDirection.Below;
+        _alertErrors = [];
+    }
+
+    private bool IsWatched(string ticker) =>
+        _watchlist.Any(w => string.Equals(w.Ticker, ticker, StringComparison.OrdinalIgnoreCase));
+
+    private async Task WatchAsync(Quote quote)
+    {
+        await Watchlist.AddAsync(quote.Ticker, quote.Class, _userId);
+        _watchlist = await Watchlist.GetAsync(_userId);
+    }
+
+    private async Task UnwatchAsync(string ticker)
+    {
+        await Watchlist.RemoveAsync(ticker, _userId);
+        _watchlist = await Watchlist.GetAsync(_userId);
+    }
+
+    private async Task ShowWatchlistAsync()
+    {
+        _tab = Tab.Watchlist;
+        await LoadWatchQuotesAsync();
+    }
+
+    private async Task LoadWatchQuotesAsync()
+    {
+        var tickers = _watchlist.Select(w => w.Ticker).ToList();
+        _watchQuotes = tickers.Count > 0
+            ? await Market.QuotesAsync(_userId, tickers)
+            : new Dictionary<string, Quote>();
+    }
+
+    private async Task ShowAlertsAsync()
+    {
+        _tab = Tab.Alerts;
+        await Alerts.EvaluateAsync(_userId);
+        _alerts = await Alerts.GetAsync(_userId);
+    }
+
+    private async Task CreateAlertAsync()
+    {
+        if (_selected is null) return;
+
+        var result = await Alerts.AddAsync(_selected.Ticker, _selected.Class, _alertDirection, _alertTarget, _userId);
+        _alertErrors = result.Messages;
+
+        if (result.Success)
+            _alerts = await Alerts.GetAsync(_userId);
+    }
+
+    private async Task DeleteAlertAsync(PriceAlert alert)
+    {
+        await Alerts.DeleteAsync(alert.Id, _userId);
+        _alerts = await Alerts.GetAsync(_userId);
+    }
+}

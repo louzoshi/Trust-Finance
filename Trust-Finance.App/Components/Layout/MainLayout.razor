@@ -1,0 +1,149 @@
+@inherits LayoutComponentBase
+@inject ThemeState Theme
+@inject CurrentUser CurrentUser
+@inject UiState Ui
+@inject AuthBypass Bypass
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="app-shell @(_navOpen ? "nav-open" : null)">
+    <div class="drawer-backdrop" @onclick="CloseNav"></div>
+
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            Trust Finance
+        </div>
+
+        <nav class="sidebar-nav" @onclick="CloseNav">
+            <span class="nav-section">Finanças</span>
+            <NavLink href="" Match="NavLinkMatch.All">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
+                Visão geral
+            </NavLink>
+            <NavLink href="lancamentos">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10" /></svg>
+                Lançamentos
+            </NavLink>
+            <NavLink href="categorias">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 3h9v9H3z" /></svg>
+                Categorias
+            </NavLink>
+
+            <span class="nav-section">Investimentos</span>
+            <NavLink href="carteira">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v12H3z" /><path d="M3 11h18" /><path d="M16 15h2" /></svg>
+                Carteira
+            </NavLink>
+            <NavLink href="mercado">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18 9 11l4 4 7-9" /><path d="M15 6h5v5" /></svg>
+                Mercado
+            </NavLink>
+            <NavLink href="metas">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>
+                Metas
+            </NavLink>
+
+            <span class="nav-section">Sistema</span>
+            <NavLink href="configuracoes">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></svg>
+                Configurações
+            </NavLink>
+        </nav>
+
+        <div class="sidebar-footer">
+            <button type="button" class="btn-ghost" @onclick="Theme.ToggleAsync">
+                @(Theme.IsDark ? "Tema claro" : "Tema escuro")
+            </button>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="topbar">
+            <button type="button" class="btn-ghost btn-icon nav-toggle" @onclick="ToggleNav"
+                    aria-label="Abrir menu" aria-expanded="@_navOpen">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
+
+            <span class="topbar-spacer"></span>
+
+            <button type="button" class="btn-ghost btn-icon" @onclick="TogglePrivacyAsync"
+                    aria-label="@(Ui.PrivacyMode ? "Mostrar valores" : "Ocultar valores")"
+                    title="@(Ui.PrivacyMode ? "Mostrar valores" : "Ocultar valores")">
+                @if (Ui.PrivacyMode)
+                {
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18" /><path d="M10.6 5.2A9 9 0 0 1 21 12a17 17 0 0 1-3 3.6M6.3 6.3A17 17 0 0 0 3 12a9 9 0 0 0 12.5 4.5" /></svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7" /><circle cx="12" cy="12" r="3" /></svg>
+                }
+            </button>
+
+            <NotificationTray />
+
+            <span class="topbar-user">@_userName</span>
+
+            @* With the bypass on there is nothing to sign out of, and the badge is there so
+               a session without a login is never mistaken for a real one. *@
+            @if (Bypass.Enabled)
+            {
+                <span class="badge badge-muted" title="Auth:Bypass está ligado — a tela de login foi pulada">sem login</span>
+            }
+            else
+            {
+                <form method="post" action="sair">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn-ghost">Sair</button>
+                </form>
+            }
+        </header>
+
+        <main class="page">
+            @Body
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Algo deu errado.
+    <a href="." class="reload">Recarregar</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private string _userName = string.Empty;
+    private bool _navOpen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userName = await CurrentUser.NameAsync();
+        await Ui.LoadAsync();
+
+        Theme.Changed += StateHasChanged;
+        Ui.Changed += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The theme was chosen by theme.js before Blazor started; read it back once the
+        // circuit is up so the toggle label and the charts agree with the page.
+        if (firstRender)
+        {
+            await Theme.SyncAsync();
+            await JS.InvokeVoidAsync("tfUi.markInteractive");
+        }
+    }
+
+    private void ToggleNav() => _navOpen = !_navOpen;
+
+    private void CloseNav() => _navOpen = false;
+
+    private async Task TogglePrivacyAsync() => await Ui.TogglePrivacyAsync();
+
+    public void Dispose()
+    {
+        Theme.Changed -= StateHasChanged;
+        Ui.Changed -= StateHasChanged;
+    }
+}

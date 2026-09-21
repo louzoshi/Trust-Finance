@@ -1,0 +1,237 @@
+@page "/configuracoes"
+@inject SettingsService Settings
+@inject MarketData Market
+@inject CurrentUser CurrentUser
+@inject UiState Ui
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Configurações · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Configurações</h1>
+        <p class="page-subtitle">Aparência, dados de mercado e notificações</p>
+    </div>
+    <div class="form-actions">
+        @if (_saved)
+        {
+            <span class="badge badge-income">Salvo</span>
+        }
+        <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(_saving || _settings is null)">
+            Salvar alterações
+        </button>
+    </div>
+</div>
+
+@if (_settings is null)
+{
+    <p class="page-status">Carregando configurações…</p>
+}
+else
+{
+    <ErrorList Messages="_errors" />
+
+    <section class="card">
+        <h2 class="card-title">Aparência</h2>
+        <p class="card-subtitle">Aplicado imediatamente após salvar</p>
+
+        <div class="form-grid">
+            <label>
+                Densidade
+                <select @bind="_settings.Density">
+                    <option value="@Density.Comfortable">Confortável</option>
+                    <option value="@Density.Compact">Compacta</option>
+                </select>
+            </label>
+
+            <label>
+                Cor de destaque
+                <input type="color" @bind="_accent" />
+            </label>
+
+            <label>
+                Página inicial
+                <select @bind="_settings.StartPage">
+                    <option value="@StartPage.Dashboard">Visão geral</option>
+                    <option value="@StartPage.Investments">Carteira</option>
+                    <option value="@StartPage.Transactions">Lançamentos</option>
+                </select>
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn-soft" @onclick="ResetAccent">Voltar à cor padrão</button>
+        </div>
+
+        <label class="check-row">
+            <InputCheckbox @bind-Value="_settings.PrivacyMode" />
+            Modo privacidade — desfoca saldos até passar o mouse
+        </label>
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">Dados de mercado</h2>
+        <p class="card-subtitle">
+            Sem token, o app usa uma base de amostra e os preços são ilustrativos.
+            Um token gratuito da brapi.dev liga as cotações reais da B3.
+        </p>
+
+        <div class="form-grid">
+            <label>
+                Token brapi.dev
+                <InputText @bind-Value="_settings.MarketDataToken" type="password"
+                           placeholder="deixe vazio para usar dados de amostra" autocomplete="off" />
+            </label>
+
+            <label>
+                Intervalo de atualização (minutos)
+                <InputNumber @bind-Value="_settings.QuoteRefreshMinutes" min="1" max="1440" />
+            </label>
+        </div>
+
+        <p class="field-hint">
+            Fonte atual: <strong>@(_providerName ?? "…")</strong>@(_isLive ? " — cotações ao vivo" : " — dados de amostra").
+            Crie um token gratuito em <a href="https://brapi.dev" target="_blank" rel="noopener noreferrer">brapi.dev</a>.
+        </p>
+
+        <div class="form-actions">
+            <button type="button" class="btn-soft" @onclick="TestConnectionAsync" disabled="@_testing">
+                Testar conexão
+            </button>
+            @if (_testResult is not null)
+            {
+                <span class="badge @(_testOk ? "badge-income" : "badge-expense")">@_testResult</span>
+            }
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">Notificações</h2>
+        <p class="card-subtitle">O que aparece no sino</p>
+
+        <label class="check-row">
+            <InputCheckbox @bind-Value="_settings.NotifyPriceAlerts" />
+            Alertas de preço atingidos
+        </label>
+        <label class="check-row">
+            <InputCheckbox @bind-Value="_settings.NotifyBudgetOverruns" />
+            Orçamento de categoria estourado ou perto do limite
+        </label>
+        <label class="check-row">
+            <InputCheckbox @bind-Value="_settings.NotifyContributionGoal" />
+            Meta de aporte mensal ainda não batida
+        </label>
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">Dados</h2>
+        <p class="card-subtitle">Onde suas informações ficam guardadas</p>
+        <p class="field-hint">
+            Tudo fica em um único arquivo SQLite no seu computador — nada é enviado para
+            fora, exceto as consultas de cotação quando você configura um token.
+        </p>
+    </section>
+}
+
+@code {
+    private int _userId;
+    private UserSettings? _settings;
+
+    private string _accent = "#2a78d6";
+    private bool _saving;
+    private bool _saved;
+    private bool _testing;
+    private bool _testOk;
+    private string? _testResult;
+    private string? _providerName;
+    private bool _isLive;
+    private List<string> _errors = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _settings = await Settings.GetAsync(_userId);
+        _accent = _settings.AccentColor ?? "#2a78d6";
+
+        var provider = await Market.ProviderAsync(_userId);
+        _providerName = provider.Name;
+        _isLive = provider.IsLive;
+    }
+
+    private void ResetAccent() => _accent = "#2a78d6";
+
+    private async Task SaveAsync()
+    {
+        if (_settings is null) return;
+
+        _saving = true;
+        _saved = false;
+        _errors = [];
+
+        try
+        {
+            // The default accent is stored as "no choice" rather than as itself, so a
+            // future change to the palette still reaches users who never picked a colour.
+            _settings.AccentColor = string.Equals(_accent, "#2a78d6", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : _accent;
+
+            await Settings.SaveAsync(_settings);
+
+            // The token may have changed, which invalidates every cached quote.
+            Market.Invalidate(_userId);
+            Ui.Invalidate();
+
+            _saved = true;
+
+            // Density, privacy and accent are stamped onto <html> when the document is
+            // built, so the new ones only take hold on a fresh load.
+            await Task.Delay(400);
+            Navigation.Refresh(forceReload: true);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _errors = [ex.Message];
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        if (_settings is null) return;
+
+        _testing = true;
+        _testResult = null;
+
+        try
+        {
+            // Save first: the provider is built from what is stored, not from the form.
+            await Settings.SaveAsync(_settings);
+            Market.Invalidate(_userId);
+
+            var provider = await Market.ProviderAsync(_userId);
+            _providerName = provider.Name;
+            _isLive = provider.IsLive;
+
+            var quotes = await provider.GetQuotesAsync(["PETR4"]);
+
+            _testOk = quotes.Count > 0;
+            _testResult = _testOk
+                ? $"OK — PETR4 a {Money.Format(quotes.Values.First().Price)}"
+                : "Sem resposta. Verifique o token.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _testOk = false;
+            _testResult = "Falha de conexão.";
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+}

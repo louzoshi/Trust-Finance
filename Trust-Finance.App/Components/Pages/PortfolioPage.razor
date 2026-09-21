@@ -1,0 +1,382 @@
+@page "/carteira"
+@inject InvestmentService Investments
+@inject MarketData Market
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+@inject ThemeState Theme
+@implements IDisposable
+
+<PageTitle>Carteira · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Carteira</h1>
+        <p class="page-subtitle">
+            @if (_provider is not null)
+            {
+                <span>Preços por @_provider.Name@(_provider.IsLive ? "" : " — valores ilustrativos")</span>
+            }
+        </p>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn-soft" @onclick="RefreshAsync" disabled="@_loading">Atualizar preços</button>
+        <button type="button" class="btn-primary" @onclick="StartNew">Nova operação</button>
+    </div>
+</div>
+
+@if (_summary is null)
+{
+    <p class="page-status">Carregando carteira…</p>
+}
+else if (_summary.IsEmpty && !_formOpen)
+{
+    <div class="empty-state card">
+        <h2>Nenhuma operação registrada</h2>
+        <p>
+            Registre sua primeira compra para acompanhar preço médio, rentabilidade e
+            alocação. Você também pode explorar ativos na aba Mercado.
+        </p>
+        <div class="form-actions">
+            <button type="button" class="btn-primary" @onclick="StartNew">Registrar compra</button>
+            <a class="btn-soft" href="mercado">Explorar mercado</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="stat-row">
+        <StatTile Label="Patrimônio investido" Value="@Money.Format(_summary.MarketValue)" Sensitive
+                  Hint="@($"{Money.Format(_summary.Invested)} aportados")" />
+        <StatTile Label="Resultado não realizado"
+                  Value="@Money.Signed(_summary.UnrealizedPnL)" Sensitive
+                  Tone="@Tone(_summary.UnrealizedPnL)"
+                  Hint="@Money.Percent(_summary.ReturnPercent)" />
+        <StatTile Label="Resultado realizado"
+                  Value="@Money.Signed(_summary.RealizedPnL)" Sensitive
+                  Tone="@Tone(_summary.RealizedPnL)"
+                  Hint="já vendido" />
+        <StatTile Label="Variação do dia"
+                  Value="@(_summary.DayChange is { } d ? Money.Signed(d) : "—")" Sensitive
+                  Tone="@Tone(_summary.DayChange ?? 0)"
+                  Hint="@Money.Percent(_summary.DayChangePercent)" />
+    </div>
+
+    @if (_summary.IsPartiallyPriced)
+    {
+        <p class="field-hint">
+            @_summary.TickersWithoutQuote @(_summary.TickersWithoutQuote == 1 ? "ativo está" : "ativos estão")
+            sem cotação e @(_summary.TickersWithoutQuote == 1 ? "aparece" : "aparecem") pelo preço de custo.
+        </p>
+    }
+
+    @if (_formOpen)
+    {
+        <section class="card">
+            <h2 class="card-title">@(_editingId is null ? "Nova operação" : "Editar operação")</h2>
+            <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+                <label>
+                    Ticker
+                    <InputText @bind-Value="_form.Ticker" maxlength="20" placeholder="PETR4" />
+                </label>
+                <label>
+                    Classe
+                    <InputSelect @bind-Value="_form.Class">
+                        @foreach (var c in AssetClasses.All)
+                        {
+                            <option value="@c">@c.Singular()</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>
+                    Operação
+                    <InputSelect @bind-Value="_form.Side">
+                        <option value="@TradeSide.Buy">Compra</option>
+                        <option value="@TradeSide.Sell">Venda</option>
+                    </InputSelect>
+                </label>
+                @* No min="0" here: the browser would swallow a negative number with its own
+                   tooltip before the submit reached the entity, and the user would never see
+                   the domain message — nor the other problems reported alongside it. *@
+                <label>
+                    Quantidade
+                    <InputNumber @bind-Value="_form.Quantity" step="any" />
+                </label>
+                <label>
+                    Preço unitário
+                    <InputNumber @bind-Value="_form.UnitPrice" step="0.01" />
+                </label>
+                <label>
+                    Taxas
+                    <InputNumber @bind-Value="_form.Fees" step="0.01" />
+                </label>
+                <label>
+                    Data
+                    <InputDate @bind-Value="_form.Date" />
+                </label>
+                <label>
+                    Observação
+                    <InputText @bind-Value="_form.Note" maxlength="200" placeholder="opcional" />
+                </label>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" disabled="@_saving">
+                        @(_editingId is null ? "Registrar" : "Salvar")
+                    </button>
+                    <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+                </div>
+            </EditForm>
+            <p class="field-hint">
+                Total da operação: <strong>@Money.Format(_form.Total)</strong>
+                @(_form.Side == TradeSide.Buy ? " (com taxas)" : " (líquido de taxas)")
+            </p>
+            <ErrorList Messages="_formErrors" />
+        </section>
+    }
+
+    @if (_summary.Allocation.Count > 0)
+    {
+        <div class="chart-grid">
+            <section class="card">
+                <h2 class="card-title">Alocação por classe</h2>
+                <p class="card-subtitle">Percentual do que está investido hoje</p>
+                <AllocationChart Data="_summary.Allocation" />
+            </section>
+
+            <section class="card">
+                <h2 class="card-title">Onde está o dinheiro</h2>
+                <p class="card-subtitle">Maiores posições</p>
+                @foreach (var p in _summary.Positions.Where(p => p.IsOpen).Take(6))
+                {
+                    var share = _summary.MarketValue > 0 ? p.MarketValue / _summary.MarketValue * 100m : 0m;
+                    <div class="progress-row">
+                        <div class="progress-head">
+                            <span class="ticker">@p.Ticker</span>
+                            <span class="sensitive">@Money.Format(p.MarketValue) · @Money.Percent(share, signed: false)</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" style="width: @(((double)share).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                        </div>
+                    </div>
+                }
+            </section>
+        </div>
+    }
+
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">Posições</h2>
+            <span class="card-subtitle">@_summary.Positions.Count(p => p.IsOpen) em aberto</span>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Ativo</th>
+                        <th>Classe</th>
+                        <th class="num">Qtd.</th>
+                        <th class="num">Preço médio</th>
+                        <th class="num">Cotação</th>
+                        <th class="num">Valor</th>
+                        <th class="num">Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _summary.Positions)
+                    {
+                        <tr>
+                            <td data-label="Ativo">
+                                <span class="ticker">@p.Ticker</span>
+                                @if (p.Quote is not null)
+                                {
+                                    <div class="ticker-name">@p.Quote.Name</div>
+                                }
+                                else if (!p.IsOpen)
+                                {
+                                    <div class="ticker-name">posição encerrada</div>
+                                }
+                            </td>
+                            <td data-label="Classe"><span class="badge badge-muted">@p.Class.Singular()</span></td>
+                            <td data-label="Qtd." class="num">@Money.Quantity(p.Quantity, p.Class)</td>
+                            <td data-label="Preço médio" class="num sensitive">@(p.IsOpen ? Money.Format(p.AveragePrice) : "—")</td>
+                            <td data-label="Cotação" class="num">
+                                @if (p.Quote is not null)
+                                {
+                                    <span>@Money.Format(p.Quote.Price)</span>
+                                    <div class="ticker-name @Money.Tone(p.Quote.ChangePercent)">@Money.Percent(p.Quote.ChangePercent)</div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td data-label="Valor" class="num sensitive">@(p.IsOpen ? Money.Format(p.MarketValue) : "—")</td>
+                            <td data-label="Resultado" class="num sensitive @Money.Tone(p.TotalPnL)">
+                                @Money.Signed(p.TotalPnL)
+                                @if (p.IsOpen && p.UnrealizedPercent is not null)
+                                {
+                                    <div class="ticker-name @Money.Tone(p.UnrealizedPercent)">@Money.Percent(p.UnrealizedPercent)</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">Operações</h2>
+            <span class="card-subtitle">@_trades.Count no total</span>
+        </div>
+        <ErrorList Messages="_listErrors" />
+        @if (_trades.Count == 0)
+        {
+            <p class="page-status">Nenhuma operação registrada.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Ativo</th>
+                            <th>Tipo</th>
+                            <th class="num">Qtd.</th>
+                            <th class="num">Preço</th>
+                            <th class="num">Total</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _trades)
+                        {
+                            var buy = t.Side == TradeSide.Buy;
+                            <tr>
+                                <td data-label="Data">@t.Date.ToString("dd/MM/yyyy")</td>
+                                <td data-label="Ativo"><span class="ticker">@t.Ticker</span></td>
+                                <td data-label="Tipo">
+                                    <span class="badge @(buy ? "badge-income" : "badge-expense")">@(buy ? "Compra" : "Venda")</span>
+                                </td>
+                                <td data-label="Qtd." class="num">@Money.Quantity(t.Quantity, t.Class)</td>
+                                <td data-label="Preço" class="num">@Money.Format(t.UnitPrice)</td>
+                                <td data-label="Total" class="num sensitive">@Money.Format(buy ? t.Gross + t.Fees : t.Gross - t.Fees)</td>
+                                <td class="actions">
+                                    <button type="button" class="btn-ghost" @onclick="() => StartEdit(t)">Editar</button>
+                                    <ConfirmButton Message="@($"Excluir a operação de {t.Ticker}?")" OnConfirmed="() => DeleteAsync(t)">
+                                        Excluir
+                                    </ConfirmButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private int _userId;
+    private PortfolioSummary? _summary;
+    private List<Trade> _trades = [];
+    private IMarketDataProvider? _provider;
+
+    private TradeForm _form = new();
+    private int? _editingId;
+    private bool _formOpen;
+    private bool _saving;
+    private bool _loading;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += StateHasChanged;
+
+        _userId = await CurrentUser.IdAsync();
+        _form = TradeForm.Empty(Today);
+        _provider = await Market.ProviderAsync(_userId);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _trades = await Investments.GetTradesAsync(_userId);
+        _summary = await Investments.GetPortfolioAsync(_userId);
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        Market.Invalidate(_userId);
+        await LoadAsync();
+        _loading = false;
+    }
+
+    private void StartNew()
+    {
+        _editingId = null;
+        _form = TradeForm.Empty(Today);
+        _formErrors = [];
+        _formOpen = true;
+    }
+
+    private void StartEdit(Trade trade)
+    {
+        _editingId = trade.Id;
+        _form = TradeForm.From(trade);
+        _formErrors = [];
+        _formOpen = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _formOpen = false;
+        _form = TradeForm.Empty(Today);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Investments.AddTradeAsync(_form.ToTrade(_userId))
+            : await Investments.UpdateTradeAsync(_editingId.Value, _form.ToTrade(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private async Task DeleteAsync(Trade trade)
+    {
+        var result = await Investments.DeleteTradeAsync(trade.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == trade.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+
+    private static StatTile.StatTone Tone(decimal value) => value switch
+    {
+        > 0 => StatTile.StatTone.Income,
+        < 0 => StatTile.StatTone.Expense,
+        _ => StatTile.StatTone.Neutral
+    };
+
+    public void Dispose() => Theme.Changed -= StateHasChanged;
+}

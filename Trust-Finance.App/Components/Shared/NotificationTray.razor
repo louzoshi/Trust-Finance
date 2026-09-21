@@ -1,0 +1,106 @@
+@inject NotificationService Notifications
+@inject CurrentUser CurrentUser
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<div class="tray-anchor">
+    <button type="button" class="btn-ghost btn-icon" @onclick="ToggleAsync"
+            aria-label="@Label" aria-expanded="@_open">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+        </svg>
+        @if (_notices.Count > 0)
+        {
+            <span class="tray-dot">@(_notices.Count > 9 ? "9+" : _notices.Count)</span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="tray" role="dialog" aria-label="Notificações">
+            <div class="tray-head">
+                <h2>Notificações</h2>
+                @if (_notices.Count > 0)
+                {
+                    <button type="button" class="btn-ghost" @onclick="DismissAllAsync">Limpar</button>
+                }
+            </div>
+
+            @if (_notices.Count == 0)
+            {
+                <p class="tray-empty">Nada por aqui. Alertas de preço e estouros de orçamento aparecem neste painel.</p>
+            }
+            else
+            {
+                @foreach (var notice in _notices)
+                {
+                    <a class="notice @notice.LevelClass()" href="@(notice.Link ?? "#")" @onclick="Close" @onclick:preventDefault="@(notice.Link is null)">
+                        <span class="notice-dot" aria-hidden="true"></span>
+                        <span>
+                            <span class="notice-title">@notice.Title()</span>
+                            <p class="notice-detail">@notice.Detail()</p>
+                        </span>
+                    </a>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private IReadOnlyList<Notice> _notices = [];
+    private Timer? _poll;
+
+    private string Label => _notices.Count == 0
+        ? "Notificações"
+        : $"Notificações, {_notices.Count} não lidas";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+
+        // Price alerts only fire when something is evaluated, and the user is not going
+        // to reload the page to find out. A slow poll keeps the badge honest without
+        // turning a local app into a busy one.
+        _poll = new Timer(async _ => await InvokeAsync(async () =>
+        {
+            await RefreshAsync();
+            StateHasChanged();
+        }), null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            _notices = await Notifications.GetAsync(await CurrentUser.IdAsync());
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+        {
+            // The tray is decoration on top of the page; it must never be the thing that
+            // breaks it. An empty tray is a better failure than a crashed circuit.
+            _notices = [];
+        }
+    }
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (_open) await RefreshAsync();
+    }
+
+    private void Close() => _open = false;
+
+    private async Task DismissAllAsync()
+    {
+        await Notifications.DismissAllAsync(await CurrentUser.IdAsync());
+        await RefreshAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_poll is not null) await _poll.DisposeAsync();
+    }
+}

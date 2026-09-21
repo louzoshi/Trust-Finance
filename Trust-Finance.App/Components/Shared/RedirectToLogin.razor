@@ -1,0 +1,11 @@
+@inject NavigationManager Navigation
+
+@code {
+    // A full load, not a circuit navigation: the login page is rendered statically and
+    // signs in by writing a cookie, which only a real request can carry back.
+    protected override void OnInitialized()
+    {
+        var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
+        Navigation.NavigateTo($"login?returnUrl=/{Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+    }
+}

@@ -1,0 +1,233 @@
+@page "/"
+@inject TransactionService Transactions
+@inject CategoryService Categories
+@inject InvestmentService Investments
+@inject BudgetService Budgets
+@inject CurrentUser CurrentUser
+@inject ThemeState Theme
+@inject TimeProvider Clock
+@inject UiState Ui
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Visão geral · Trust Finance</PageTitle>
+
+@if (_summary is null)
+{
+    <p class="page-status">Carregando…</p>
+}
+else if (_empty)
+{
+    <div class="empty-state card">
+        <h2>Vamos começar</h2>
+        <p>
+            Registre o primeiro lançamento para ver saldo, receitas contra despesas e para
+            onde o dinheiro está indo. Se você já investe, cadastre suas posições na carteira.
+        </p>
+        <div class="form-actions">
+            <a class="btn-primary" href="lancamentos">Adicionar lançamento</a>
+            <a class="btn-soft" href="carteira">Registrar investimento</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Visão geral</h1>
+            <p class="page-subtitle">@_monthLabel</p>
+        </div>
+    </div>
+
+    <div class="stat-row">
+        <StatTile Label="Patrimônio total" Value="@Money.Format(_netWorth)" Sensitive
+                  Hint="@($"{Money.Format(_cash)} em caixa · {Money.Format(_invested)} investido")" />
+        <StatTile Label="Receitas no mês" Value="@Money.Format(_summary.Current.Income)" Sensitive
+                  Tone="StatTile.StatTone.Income" />
+        <StatTile Label="Despesas no mês" Value="@Money.Format(_summary.Current.Expense)" Sensitive
+                  Tone="StatTile.StatTone.Expense" />
+        <StatTile Label="Saldo do mês"
+                  Value="@Money.Signed(_summary.Current.Balance)" Sensitive
+                  Tone="@(_summary.Current.Balance < 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Income)"
+                  Hint="@(_summary.PreviousBalance is { } previous ? $"{Money.Signed(previous)} no mês passado" : "sem movimento no mês passado")" />
+    </div>
+
+    <div class="chart-grid">
+        <section class="card">
+            <h2 class="card-title">Receitas × despesas</h2>
+            <p class="card-subtitle">Últimos @MonthlyFlow.MonthsShown meses</p>
+            <MonthlyFlowChart Data="_summary.ByMonth" />
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">Gastos por categoria</h2>
+            <p class="card-subtitle">Mês atual, só despesas</p>
+            @if (_summary.ByCategory.Count == 0)
+            {
+                <p class="page-status">Nenhum gasto neste mês.</p>
+            }
+            else
+            {
+                <CategoryBreakdownChart Data="_summary.ByCategory" />
+            }
+        </section>
+    </div>
+
+    <div class="split-grid">
+        @if (_portfolio is not null && !_portfolio.IsEmpty)
+        {
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Carteira</h2>
+                    <a href="carteira" class="card-link">Ver tudo</a>
+                </div>
+                <div class="progress-head">
+                    <span class="text-muted">Valor de mercado</span>
+                    <span class="sensitive">@Money.Format(_portfolio.MarketValue)</span>
+                </div>
+                <div class="progress-head">
+                    <span class="text-muted">Resultado não realizado</span>
+                    <span class="sensitive @Money.Tone(_portfolio.UnrealizedPnL)">
+                        @Money.Signed(_portfolio.UnrealizedPnL) (@Money.Percent(_portfolio.ReturnPercent))
+                    </span>
+                </div>
+                @if (_portfolio.DayChange is { } day)
+                {
+                    <div class="progress-head">
+                        <span class="text-muted">Variação do dia</span>
+                        <span class="sensitive @Money.Tone(day)">@Money.Signed(day)</span>
+                    </div>
+                }
+                @foreach (var a in _portfolio.Allocation.Take(4))
+                {
+                    <div class="progress-row">
+                        <div class="progress-head">
+                            <span>@a.Class.Label()</span>
+                            <span class="text-muted">@Money.Percent(a.Percent, signed: false)</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" style="width: @Width(a.Percent)"></div>
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+
+        @if (_budgets.Count > 0)
+        {
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Orçamentos</h2>
+                    <a href="metas" class="card-link">Gerenciar</a>
+                </div>
+                @foreach (var b in _budgets.Take(5))
+                {
+                    <div class="progress-row">
+                        <div class="progress-head">
+                            <span>@b.Category</span>
+                            <span class="sensitive @(b.IsOver ? "text-expense" : "text-muted")">
+                                @Money.Format(b.Spent) / @Money.Format(b.Limit)
+                            </span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar @(b.IsOver ? "over" : b.IsNear ? "near" : "")"
+                                 style="width: @Width(Math.Min(b.Percent, 100m))"></div>
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+    </div>
+
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">Lançamentos recentes</h2>
+            <a href="lancamentos" class="card-link">Ver todos</a>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Descrição</th>
+                        <th>Categoria</th>
+                        <th class="num">Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _summary.Recent)
+                    {
+                        <tr>
+                            <td data-label="Data">@t.Date.ToString("dd/MM/yyyy")</td>
+                            <td data-label="Descrição">@t.Description</td>
+                            <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(t.CategoryId, "—"))</td>
+                            <td data-label="Valor" class="num sensitive @(t.Type == TransactionType.Income ? "text-income" : "text-expense")">
+                                @Money.Signed(t.Amount, t.Type)
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    private DashboardSummary? _summary;
+    private PortfolioSummary? _portfolio;
+    private IReadOnlyList<BudgetStatus> _budgets = [];
+    private bool _empty;
+    private Dictionary<int, string> _categoryNames = new();
+    private decimal _cash;
+    private decimal _invested;
+    private decimal _netWorth;
+    private string _monthLabel = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += StateHasChanged;
+
+        // Honour the chosen start page once per circuit, on the way in.
+        if (!Ui.StartPageHonoured)
+        {
+            Ui.MarkStartPageHonoured();
+            var preference = (await Ui.LoadAsync()).StartPage;
+
+            if (preference != StartPage.Dashboard)
+            {
+                Navigation.NavigateTo(preference == StartPage.Investments ? "carteira" : "lancamentos");
+                return;
+            }
+        }
+
+        var userId = await CurrentUser.IdAsync();
+        var categories = await Categories.GetAllAsync(userId);
+        var transactions = await Transactions.GetAllAsync(userId);
+
+        _categoryNames = categories.ToDictionary(c => c.Id, c => c.Name);
+
+        var today = DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+        _monthLabel = Clock.GetLocalNow().ToString("MMMM 'de' yyyy");
+        _summary = MonthlyFlow.Summarize(transactions, _categoryNames, today, Labels);
+
+        // Cash is the whole ledger, not the month: it is what is actually on hand.
+        _cash = transactions.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
+
+        _portfolio = await Investments.GetPortfolioAsync(userId);
+        _invested = _portfolio.MarketValue;
+        _netWorth = _cash + _invested;
+
+        _budgets = await Budgets.GetStatusAsync(userId);
+
+        // The dashboard only has nothing to say when both ledgers are empty.
+        _empty = transactions.Count == 0 && _portfolio.IsEmpty;
+    }
+
+    /// <summary>The two names the domain asks the app layer to supply.</summary>
+    private static readonly CategoryLabels Labels = new(Other: "Outras", Uncategorized: "Sem categoria");
+
+    private static string Width(decimal percent) =>
+        ((double)Math.Clamp(percent, 0m, 100m)).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    public void Dispose() => Theme.Changed -= StateHasChanged;
+}

@@ -1,0 +1,83 @@
+@page "/login"
+@layout AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AccountService Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>Entrar · Trust Finance</PageTitle>
+
+<EditForm Model="Form" OnValidSubmit="SignInAsync" FormName="login" class="auth-card">
+    <DataAnnotationsValidator />
+    <div class="auth-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        Trust Finance
+    </div>
+    <h1>Entrar</h1>
+
+    <label>
+        E-mail
+        <InputText @bind-Value="Form.Email" type="email" autocomplete="email" required />
+    </label>
+
+    <label>
+        Senha
+        <InputText @bind-Value="Form.Password" type="password" autocomplete="current-password" required />
+    </label>
+
+    <ValidationSummary class="error-list" />
+    @if (_error is not null)
+    {
+        <ul class="error-list"><li>@_error</li></ul>
+    }
+
+    <button type="submit" class="btn-primary">Entrar</button>
+
+    <p class="auth-switch">
+        Ainda não tem conta? <a href="registrar">Crie uma</a>
+    </p>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    public HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    public LoginForm Form { get; set; } = default!;
+
+    // The framework fills Form from the post; on the first GET there is no post, so
+    // an instance is supplied here rather than in an initializer the binder would overwrite.
+    protected override void OnInitialized() => Form ??= new();
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private string? _error;
+
+    private async Task SignInAsync()
+    {
+        var user = await Accounts.ValidateCredentialsAsync(Form.Email, Form.Password);
+        if (user is null)
+        {
+            _error = "E-mail ou senha inválidos";
+            return;
+        }
+
+        var principal = AccountService.CreatePrincipal(user, CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true });
+
+        Navigation.NavigateTo(SafeReturnUrl(ReturnUrl));
+    }
+
+    // Only paths inside this app: a return URL from the query string must never be
+    // able to bounce a freshly signed-in user to another site.
+    private static string SafeReturnUrl(string? returnUrl)
+        => returnUrl is not null && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//")
+            ? returnUrl
+            : "/";
+}

@@ -1,0 +1,37 @@
+@using ApexCharts
+@inject ThemeState Theme
+
+@* Income against expense, month by month — the pair that answers whether a month closed up or down. *@
+<ApexChart @key="Theme.Current" TItem="MonthFlow" Options="_options" Height="240">
+    <ApexPointSeries TItem="MonthFlow" Items="Data" Name="Receitas" SeriesType="SeriesType.Bar"
+                     XValue="@(m => Label(m))" YValue="@(m => m.Income)" />
+    <ApexPointSeries TItem="MonthFlow" Items="Data" Name="Despesas" SeriesType="SeriesType.Bar"
+                     XValue="@(m => Label(m))" YValue="@(m => m.Expense)" />
+</ApexChart>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MonthFlow> Data { get; set; } = [];
+
+    private ApexChartOptions<MonthFlow> _options = new();
+
+    protected override void OnParametersSet()
+    {
+        var palette = ChartPalette.For(Theme.IsDark);
+        _options = palette.BaseOptions<MonthFlow>();
+        _options.Colors = [palette.Income, palette.Expense];
+        _options.PlotOptions = new PlotOptions
+        {
+            Bar = new PlotOptionsBar { ColumnWidth = "45%", BorderRadius = 4, BorderRadiusApplication = BorderRadiusApplication.End }
+        };
+        _options.Xaxis = new XAxis
+        {
+            AxisTicks = new AxisTicks { Show = false },
+            AxisBorder = new AxisBorder { Color = palette.Axis }
+        };
+        _options.Yaxis = [new YAxis { Labels = new YAxisLabels { Formatter = ChartPalette.CompactCurrencyFormatter } }];
+        _options.Legend = new Legend { Position = LegendPosition.Bottom };
+    }
+
+    // "set/25" — the year is there because six months can straddle a New Year.
+    private static string Label(MonthFlow m) => m.FirstDay.ToString("MMM/yy").TrimEnd('.');
+}

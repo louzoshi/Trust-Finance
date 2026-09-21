@@ -1,0 +1,140 @@
+@page "/categorias"
+@inject CategoryService Categories
+@inject CurrentUser CurrentUser
+
+<PageTitle>Categorias · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Categorias</h1>
+        <p class="page-subtitle">Como seus gastos são agrupados</p>
+    </div>
+</div>
+
+<section class="card">
+    <h2 class="card-title">@(_editingId is null ? "Nova categoria" : "Editar categoria")</h2>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Nome
+            <InputText @bind-Value="_form.Name" maxlength="40" />
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <ErrorList Messages="_formErrors" />
+</section>
+
+<section class="card">
+    <ErrorList Messages="_listErrors" />
+    @if (_categories is null)
+    {
+        <p class="page-status">Carregando categorias…</p>
+    }
+    else if (_categories.Count == 0)
+    {
+        <p class="page-status">Nenhuma categoria ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Identificador</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _categories)
+                {
+                    <tr>
+                        <td data-label="Nome">@c.Name</td>
+                        <td data-label="Identificador" class="mono">@c.Slug</td>
+                        <td class="actions">
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(c)">Editar</button>
+                            <ConfirmButton Message="@($"Excluir \"{c.Name}\"? Todos os lançamentos dela serão excluídos também.")"
+                                           OnConfirmed="() => DeleteAsync(c)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private int _userId;
+    private List<Category>? _categories;
+    private CategoryForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _categories = await Categories.GetAllAsync(_userId);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Categories.CreateAsync(_form.Name, _userId)
+            : await Categories.UpdateAsync(_editingId.Value, _form.Name, _userId);
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(Category category)
+    {
+        _editingId = category.Id;
+        _form = new CategoryForm { Name = category.Name };
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = new CategoryForm();
+    }
+
+    private async Task DeleteAsync(Category category)
+    {
+        var result = await Categories.DeleteAsync(category.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == category.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+}

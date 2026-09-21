@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TrustFinance.App</RootNamespace>
+    <AssemblyName>TrustFinance</AssemblyName>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- The rendered UI is Brazilian Portuguese; culture is fixed in Program.cs. -->
+    <SatelliteResourceLanguages>en;pt-BR</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Blazor-ApexCharts" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- So the integration suite can exercise internal rules such as ticker classification. -->
+    <InternalsVisibleTo Include="TrustFinance.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Trust-Finance.Data\Trust-Finance.Data.csproj" />
+    <ProjectReference Include="..\Trust-Finance.Domain\Trust-Finance.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

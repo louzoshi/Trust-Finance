@@ -1,108 +1,114 @@
-using FluentAssertions;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using Trust_Finance.Services;
-using Trust_Finance.Tests.Fixtures;
-using Xunit;
+using TrustFinance.App.Services;
+using TrustFinance.Tests.Fixtures;
 
-namespace Trust_Finance.Tests.Services;
+namespace TrustFinance.Tests.Services;
 
-public class CategoryServiceTests
+public class CategoryServiceTests : IDisposable
 {
-    private const int Ada = 1;
-    private const int Bob = 2;
+    private readonly SqliteDatabase _db = new();
+    private readonly CategoryService _service;
 
-    private static CategoryService NewService()
-        => new(DbContextFixture.CreateContext(Guid.NewGuid().ToString()));
+    public CategoryServiceTests() => _service = new CategoryService(_db);
+
+    public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Create_Should_Add_Category()
+    public async Task Create_Should_Derive_The_Slug_From_The_Name()
     {
-        var service = NewService();
+        var result = await _service.CreateAsync("Alimentação ", _db.Ada);
 
-        var category = await service.CreateAsync("Alimentação", "alimentacao", Ada);
-
-        category.Should().NotBeNull();
-        category.Name.Should().Be("Alimentação");
-        category.UserId.Should().Be(Ada);
+        result.Success.Should().BeTrue();
+        result.Value!.Name.Should().Be("Alimentação");
+        result.Value.Slug.Should().Be("alimentacao");
+        result.Value.UserId.Should().Be(_db.Ada);
     }
 
     [Fact]
-    public async Task Create_Should_Fail_When_Slug_Is_Duplicated_For_The_Same_User()
+    public async Task Create_Should_Reject_A_Name_That_Is_Too_Short()
     {
-        var service = NewService();
-        await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        var result = await _service.CreateAsync("A", _db.Ada);
 
-        Func<Task> action = async () =>
-            await service.CreateAsync("Outra", "alimentacao", Ada);
-
-        await action.Should().ThrowAsync<InvalidOperationException>();
+        result.Failed.Should().BeTrue();
+        result.Notifications.Should().ContainSingle(n => n.Key == "Name");
     }
 
     [Fact]
-    public async Task Create_Should_Allow_The_Same_Slug_For_Different_Users()
+    public async Task Create_Should_Fail_When_The_Name_Collides_For_The_Same_User()
     {
-        var service = NewService();
-        await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        await _service.CreateAsync("Alimentação", _db.Ada);
 
-        var bobs = await service.CreateAsync("Alimentação", "alimentacao", Bob);
+        var result = await _service.CreateAsync("alimentacao", _db.Ada);
 
-        bobs.UserId.Should().Be(Bob);
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("Já existe");
+    }
+
+    [Fact]
+    public async Task Create_Should_Allow_The_Same_Name_For_Different_Users()
+    {
+        await _service.CreateAsync("Alimentação", _db.Ada);
+
+        var result = await _service.CreateAsync("Alimentação", _db.Bob);
+
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
     public async Task GetAll_Should_Return_Only_The_Callers_Categories()
     {
-        var service = NewService();
-        await service.CreateAsync("Alimentação", "alimentacao", Ada);
-        await service.CreateAsync("Aluguel", "aluguel", Bob);
+        await _service.CreateAsync("Mercado", _db.Ada);
+        await _service.CreateAsync("Lazer", _db.Bob);
 
-        var categories = await service.GetAllAsync(Ada);
+        var categories = await _service.GetAllAsync(_db.Ada);
 
-        categories.Should().ContainSingle().Which.Slug.Should().Be("alimentacao");
+        categories.Should().ContainSingle().Which.Name.Should().Be("Mercado");
     }
 
     [Fact]
     public async Task GetById_Should_Not_Reach_Another_Users_Category()
     {
-        var service = NewService();
-        var adas = await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        var created = (await _service.CreateAsync("Mercado", _db.Ada)).Value!;
 
-        (await service.GetByIdAsync(adas.Id, Bob)).Should().BeNull();
+        (await _service.GetByIdAsync(created.Id, _db.Bob)).Should().BeNull();
     }
 
     [Fact]
     public async Task Update_Should_Not_Reach_Another_Users_Category()
     {
-        var service = NewService();
-        var adas = await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        var created = (await _service.CreateAsync("Mercado", _db.Ada)).Value!;
 
-        Func<Task> action = async () =>
-            await service.UpdateAsync(adas.Id, "Sequestrada", "sequestrada", Bob);
+        var result = await _service.UpdateAsync(created.Id, "Outro", _db.Bob);
 
-        await action.Should().ThrowAsync<KeyNotFoundException>();
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("não encontrada");
     }
 
     [Fact]
     public async Task Delete_Should_Not_Reach_Another_Users_Category()
     {
-        var service = NewService();
-        var adas = await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        var created = (await _service.CreateAsync("Mercado", _db.Ada)).Value!;
 
-        Func<Task> action = async () => await service.DeleteAsync(adas.Id, Bob);
-
-        await action.Should().ThrowAsync<KeyNotFoundException>();
+        (await _service.DeleteAsync(created.Id, _db.Bob)).Failed.Should().BeTrue();
+        (await _service.GetByIdAsync(created.Id, _db.Ada)).Should().NotBeNull();
     }
 
     [Fact]
-    public async Task Update_Should_Allow_Keeping_The_Same_Slug()
+    public async Task Update_Should_Allow_Keeping_The_Same_Name()
     {
-        var service = NewService();
-        var category = await service.CreateAsync("Alimentação", "alimentacao", Ada);
+        var created = (await _service.CreateAsync("Mercado", _db.Ada)).Value!;
 
-        var updated = await service.UpdateAsync(category.Id, "Mercado", "alimentacao", Ada);
+        (await _service.UpdateAsync(created.Id, "Mercado", _db.Ada)).Success.Should().BeTrue();
+    }
 
-        updated.Name.Should().Be("Mercado");
+    [Fact]
+    public async Task Update_Should_Fail_When_Renaming_Onto_Another_Category()
+    {
+        await _service.CreateAsync("Mercado", _db.Ada);
+        var lazer = (await _service.CreateAsync("Lazer", _db.Ada)).Value!;
+
+        var result = await _service.UpdateAsync(lazer.Id, "Mercado", _db.Ada);
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("Já existe");
     }
 }

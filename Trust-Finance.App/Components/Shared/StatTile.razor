@@ -1,0 +1,27 @@
+<div class="card stat-tile">
+    <span class="stat-label">@Label</span>
+    <span class="stat-value @ToneClass @(Sensitive ? "sensitive" : null)">@Value</span>
+    @if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <span class="stat-hint">@Hint</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public StatTone Tone { get; set; } = StatTone.Neutral;
+
+    /// <summary>Blur this value when privacy mode is on. Balances yes, counts no.</summary>
+    [Parameter] public bool Sensitive { get; set; }
+
+    private string ToneClass => Tone switch
+    {
+        StatTone.Income => "text-income",
+        StatTone.Expense => "text-expense",
+        _ => string.Empty
+    };
+
+    public enum StatTone { Neutral, Income, Expense }
+}

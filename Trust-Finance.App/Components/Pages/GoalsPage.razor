@@ -1,0 +1,266 @@
+@page "/metas"
+@inject BudgetService Budgets
+@inject CategoryService Categories
+@inject SettingsService Settings
+@inject InvestmentService Investments
+@inject TransactionService Transactions
+@inject CurrentUser CurrentUser
+@inject UiState Ui
+@inject TimeProvider Clock
+
+<PageTitle>Metas · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Metas</h1>
+        <p class="page-subtitle">Orçamento por categoria, aporte mensal e reserva de emergência</p>
+    </div>
+</div>
+
+@if (_settings is null)
+{
+    <p class="page-status">Carregando metas…</p>
+}
+else
+{
+    <div class="split-grid">
+        <section class="card">
+            <h2 class="card-title">Aporte do mês</h2>
+            <p class="card-subtitle">Quanto você investiu em @_monthName</p>
+            <span class="stat-value sensitive @(_contribution.IsMet ? "text-income" : null)">
+                @Money.Format(_contribution.Current)
+            </span>
+            @if (_contribution.HasTarget)
+            {
+                <div class="progress">
+                    <div class="progress-bar" style="width: @Width(_contribution.Percent)"></div>
+                </div>
+                <span class="stat-hint">
+                    @if (_contribution.IsMet)
+                    {
+                        <text>Meta de @Money.Format(_contribution.Target) batida.</text>
+                    }
+                    else
+                    {
+                        <text>Faltam @Money.Format(_contribution.Remaining) para @Money.Format(_contribution.Target).</text>
+                    }
+                </span>
+            }
+            else
+            {
+                <span class="stat-hint">Defina uma meta mensal abaixo para acompanhar o progresso.</span>
+            }
+        </section>
+
+        <section class="card">
+            <h2 class="card-title">Reserva de emergência</h2>
+            <p class="card-subtitle">Saldo em caixa acumulado</p>
+            <span class="stat-value sensitive @(_reserve.IsMet ? "text-income" : null)">
+                @Money.Format(_reserve.Current)
+            </span>
+            @if (_reserve.HasTarget)
+            {
+                <div class="progress">
+                    <div class="progress-bar" style="width: @Width(_reserve.Percent)"></div>
+                </div>
+                <span class="stat-hint">
+                    @if (_reserve.IsMet)
+                    {
+                        <text>Reserva completa.</text>
+                    }
+                    else
+                    {
+                        <text>Faltam @Money.Format(_reserve.Remaining) para @Money.Format(_reserve.Target).</text>
+                    }
+                </span>
+            }
+            else
+            {
+                <span class="stat-hint">Defina o tamanho da reserva abaixo.</span>
+            }
+        </section>
+    </div>
+
+    <section class="card">
+        <h2 class="card-title">Suas metas</h2>
+        <div class="form-grid">
+            <label>
+                Aporte mensal desejado
+                <input type="number" step="0.01" min="0" @bind="_settings.MonthlyContributionGoal" />
+            </label>
+            <label>
+                Reserva de emergência
+                <input type="number" step="0.01" min="0" @bind="_settings.EmergencyFundGoal" />
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn-primary" @onclick="SaveGoalsAsync" disabled="@_saving">Salvar metas</button>
+            @if (_savedGoals)
+            {
+                <span class="badge badge-income">Salvo</span>
+            }
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <h2 class="card-title">Orçamento por categoria</h2>
+                <p class="card-subtitle">Limite mensal de gasto. Zero desativa o acompanhamento.</p>
+            </div>
+        </div>
+
+        <ErrorList Messages="_errors" />
+
+        @if (_categories.Count == 0)
+        {
+            <p class="page-status">
+                Crie categorias primeiro.
+                <a href="categorias" class="card-link">Ir para categorias</a>
+            </p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th class="num">Limite mensal</th>
+                            <th class="num">Gasto</th>
+                            <th>Progresso</th>
+                            <th class="actions" aria-label="Ações"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in _categories)
+                        {
+                            var status = _status.FirstOrDefault(s => s.CategoryId == category.Id);
+                            <tr>
+                                <td data-label="Categoria">@category.Name</td>
+                                <td data-label="Limite mensal" class="num">
+                                    <input type="number" step="0.01" min="0" style="max-width:140px"
+                                           value="@(_limits.GetValueOrDefault(category.Id))"
+                                           @onchange="e => SetLimit(category.Id, e.Value?.ToString())" />
+                                </td>
+                                <td data-label="Gasto" class="num sensitive">
+                                    @(status is not null ? Money.Format(status.Spent) : "—")
+                                </td>
+                                <td data-label="Progresso">
+                                    @if (status is not null)
+                                    {
+                                        <div class="progress">
+                                            <div class="progress-bar @BarClass(status)" style="width: @Width(Math.Min(status.Percent, 100m))"></div>
+                                        </div>
+                                        <span class="ticker-name">
+                                            @Money.Percent(status.Percent, signed: false)
+                                            @if (status.IsOver)
+                                            {
+                                                <text> — @Money.Format(status.Spent - status.Limit) acima</text>
+                                            }
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">sem limite</span>
+                                    }
+                                </td>
+                                <td class="actions">
+                                    <button type="button" class="btn-ghost" @onclick="() => SaveLimitAsync(category.Id)">Salvar</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private int _userId;
+    private UserSettings? _settings;
+    private List<Category> _categories = [];
+    private IReadOnlyList<BudgetStatus> _status = [];
+    private readonly Dictionary<int, decimal> _limits = [];
+
+    private GoalProgress _contribution = new("Aporte", 0, 0);
+    private GoalProgress _reserve = new("Reserva", 0, 0);
+
+    private bool _saving;
+    private bool _savedGoals;
+    private List<string> _errors = [];
+
+    private string _monthName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _monthName = Clock.GetLocalNow().ToString("MMMM");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _settings = await Settings.GetAsync(_userId);
+        _categories = await Categories.GetAllAsync(_userId);
+        _status = await Budgets.GetStatusAsync(_userId);
+
+        _limits.Clear();
+        foreach (var budget in await Budgets.GetAsync(_userId))
+            _limits[budget.CategoryId] = budget.MonthlyLimit;
+
+        var today = DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+        var trades = await Investments.GetTradesAsync(_userId);
+        _contribution = new GoalProgress(
+            "Aporte do mês",
+            Planning.ContributedThisMonth(trades, today),
+            _settings.MonthlyContributionGoal);
+
+        // The reserve is what the cash ledger has accumulated overall: income minus
+        // expense across the whole history, not just this month.
+        var transactions = await Transactions.GetAllAsync(_userId);
+        var cash = transactions.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
+        _reserve = new GoalProgress("Reserva", Math.Max(cash, 0m), _settings.EmergencyFundGoal);
+    }
+
+    private void SetLimit(int categoryId, string? raw)
+    {
+        _limits[categoryId] = decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.CurrentCulture, out var value) ? value : 0m;
+    }
+
+    private async Task SaveLimitAsync(int categoryId)
+    {
+        var result = await Budgets.SetAsync(categoryId, _limits.GetValueOrDefault(categoryId), _userId);
+        _errors = result.Messages;
+
+        if (result.Success)
+            await LoadAsync();
+    }
+
+    private async Task SaveGoalsAsync()
+    {
+        if (_settings is null) return;
+
+        _saving = true;
+        _savedGoals = false;
+        try
+        {
+            await Settings.SaveAsync(_settings);
+            Ui.Invalidate();
+            await LoadAsync();
+            _savedGoals = true;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string Width(decimal percent) =>
+        ((double)Math.Clamp(percent, 0m, 100m)).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string BarClass(BudgetStatus status) =>
+        status.IsOver ? "over" : status.IsNear ? "near" : string.Empty;
+}

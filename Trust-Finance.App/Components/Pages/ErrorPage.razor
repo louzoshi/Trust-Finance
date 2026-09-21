@@ -1,0 +1,27 @@
+@page "/erro"
+@layout AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using System.Diagnostics
+
+<PageTitle>Erro · Trust Finance</PageTitle>
+
+<div class="auth-card">
+    <h1>Algo deu errado</h1>
+    <p class="auth-switch">Ocorreu um erro ao processar a sua solicitação.</p>
+    @if (!string.IsNullOrEmpty(RequestId))
+    {
+        <p class="mono">Request ID: @RequestId</p>
+    }
+    <a class="btn-primary" href="/">Voltar ao início</a>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

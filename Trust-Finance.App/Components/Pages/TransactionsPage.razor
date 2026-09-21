@@ -1,0 +1,187 @@
+@page "/lancamentos"
+@inject TransactionService Transactions
+@inject CategoryService Categories
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Lançamentos · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Lançamentos</h1>
+        <p class="page-subtitle">Receitas e despesas do seu caixa</p>
+    </div>
+</div>
+
+<section class="card">
+    <h2 class="card-title">@(_editingId is null ? "Novo lançamento" : "Editar lançamento")</h2>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Descrição
+            <InputText @bind-Value="_form.Description" maxlength="100" />
+        </label>
+        <label>
+            Valor
+            <InputNumber @bind-Value="_form.Amount" step="0.01" min="0.01" />
+        </label>
+        <label>
+            Data
+            <InputDate @bind-Value="_form.Date" />
+        </label>
+        <label>
+            Tipo
+            <InputSelect @bind-Value="_form.Type">
+                <option value="@TransactionType.Expense">Despesa</option>
+                <option value="@TransactionType.Income">Receita</option>
+            </InputSelect>
+        </label>
+        <label>
+            Categoria
+            <InputSelect @bind-Value="_form.CategoryId">
+                <option value="0" disabled>Escolha…</option>
+                @foreach (var c in _categories ?? [])
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </InputSelect>
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <ErrorList Messages="_formErrors" />
+    @if (_categories is { Count: 0 })
+    {
+        <p class="page-status">
+            Crie uma categoria primeiro — todo lançamento precisa de uma.
+            <a href="categorias" class="card-link">Ir para categorias</a>
+        </p>
+    }
+</section>
+
+<section class="card">
+    <ErrorList Messages="_listErrors" />
+    @if (_transactions is null)
+    {
+        <p class="page-status">Carregando lançamentos…</p>
+    }
+    else if (_transactions.Count == 0)
+    {
+        <p class="page-status">Nenhum lançamento ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Categoria</th>
+                    <th>Tipo</th>
+                    <th class="num">Valor</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _transactions)
+                {
+                    var income = t.Type == TransactionType.Income;
+                    <tr>
+                        <td data-label="Data">@t.Date.ToString("dd/MM/yyyy")</td>
+                        <td data-label="Descrição">@t.Description</td>
+                        <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(t.CategoryId, "—"))</td>
+                        <td data-label="Tipo"><span class="badge @(income ? "badge-income" : "badge-expense")">@(income ? "Receita" : "Despesa")</span></td>
+                        <td data-label="Valor" class="num sensitive @(income ? "text-income" : "text-expense")">@Money.Signed(t.Amount, t.Type)</td>
+                        <td class="actions">
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(t)">Editar</button>
+                            <ConfirmButton Message="@($"Excluir \"{t.Description}\"?")" OnConfirmed="() => DeleteAsync(t)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private int _userId;
+    private List<Transaction>? _transactions;
+    private List<Category>? _categories;
+    private Dictionary<int, string> _categoryNames = new();
+    private TransactionForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _form = TransactionForm.Empty(Today);
+        _categories = await Categories.GetAllAsync(_userId);
+        _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _transactions = await Transactions.GetAllAsync(_userId);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Transactions.CreateAsync(_form.ToTransaction(_userId))
+            : await Transactions.UpdateAsync(_editingId.Value, _form.ToTransaction(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(Transaction transaction)
+    {
+        _editingId = transaction.Id;
+        _form = TransactionForm.From(transaction);
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = TransactionForm.Empty(Today);
+    }
+
+    private async Task DeleteAsync(Transaction transaction)
+    {
+        var result = await Transactions.DeleteAsync(transaction.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == transaction.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+}

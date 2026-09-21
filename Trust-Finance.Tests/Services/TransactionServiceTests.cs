@@ -1,152 +1,151 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using FluentAssertions;
-using TF.Data;
-using TF.Models;
-using Trust_Finance.Services;
-using Trust_Finance.Tests.Fixtures;
-using Xunit;
+using TrustFinance.App.Services;
+using TrustFinance.Domain.Entities;
+using TrustFinance.Tests.Fixtures;
 
-namespace Trust_Finance.Tests.Services;
+namespace TrustFinance.Tests.Services;
 
-public class TransactionServiceTests
+public class TransactionServiceTests : IDisposable
 {
-    private static async Task<User> AddUserAsync(TFDataContext context, string email)
-    {
-        var user = new User
-        {
-            Name = "Teste",
-            Email = email,
-            PasswordHash = "hash"
-        };
+    private readonly SqliteDatabase _db = new();
+    private readonly TransactionService _service;
 
-        context.Users.Add(user);
-        await context.SaveChangesAsync();
+    private static readonly DateOnly Today = new(2026, 9, 20);
 
-        return user;
-    }
+    public TransactionServiceTests() => _service = new TransactionService(_db);
 
-    private static async Task<Category> AddCategoryAsync(
-        TFDataContext context, int userId, string slug = "alimentacao")
-    {
-        var category = new Category
-        {
-            Name = "Alimentação",
-            Slug = slug,
-            UserId = userId
-        };
+    public void Dispose() => _db.Dispose();
 
-        context.Categories.Add(category);
-        await context.SaveChangesAsync();
-
-        return category;
-    }
+    private static Transaction Tx(int categoryId, int userId,
+        decimal amount = 100m, TransactionType type = TransactionType.Expense, string description = "Compra")
+        => new(description, amount, Today, type, categoryId, userId);
 
     [Fact]
     public async Task Create_Should_Add_Transaction_For_User()
     {
-        // Arrange
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var user = await AddUserAsync(context, "teste@gmail.com");
-        var category = await AddCategoryAsync(context, user.Id);
+        var category = await _db.AddCategoryAsync(_db.Ada);
 
-        var service = new TransactionService(context);
+        var result = await _service.CreateAsync(Tx(category.Id, _db.Ada, 42.50m));
 
-        // Act
-        var transaction = await service.CreateAsync(
-            description: "Almoço",
-            amount: 50,
-            date: DateTime.UtcNow,
-            type: TransactionType.Expense,
-            categoryId: category.Id,
-            userId: user.Id
-        );
-
-        // Assert
-        transaction.Should().NotBeNull();
-        transaction.Description.Should().Be("Almoço");
-        transaction.Amount.Should().Be(50);
-        transaction.UserId.Should().Be(user.Id);
-
-        context.Transactions.Count().Should().Be(1);
+        result.Success.Should().BeTrue();
+        result.Value!.Id.Should().BePositive();
+        result.Value.Amount.Should().Be(42.50m);
+        result.Value.UserId.Should().Be(_db.Ada);
     }
 
     [Fact]
     public async Task Create_Should_Reject_A_Category_Owned_By_Somebody_Else()
     {
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var ada = await AddUserAsync(context, "ada@gmail.com");
-        var bob = await AddUserAsync(context, "bob@gmail.com");
-        var adasCategory = await AddCategoryAsync(context, ada.Id);
+        var bobs = await _db.AddCategoryAsync(_db.Bob);
 
-        var service = new TransactionService(context);
+        var result = await _service.CreateAsync(Tx(bobs.Id, _db.Ada));
 
-        Func<Task> action = async () => await service.CreateAsync(
-            description: "Sequestro",
-            amount: 50,
-            date: DateTime.UtcNow,
-            type: TransactionType.Expense,
-            categoryId: adasCategory.Id,
-            userId: bob.Id
-        );
-
-        await action.Should().ThrowAsync<InvalidOperationException>();
-        context.Transactions.Count().Should().Be(0);
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("Categoria não encontrada");
     }
 
     [Theory]
-    [InlineData(TransactionType.Income)]
-    [InlineData(TransactionType.Expense)]
-    public async Task Create_Should_Persist_The_Type(TransactionType type)
+    [InlineData(0, "Amount")]
+    [InlineData(-10, "Amount")]
+    public async Task Create_Should_Reject_A_Non_Positive_Amount(decimal amount, string key)
     {
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var user = await AddUserAsync(context, "teste@gmail.com");
-        var category = await AddCategoryAsync(context, user.Id);
+        var category = await _db.AddCategoryAsync(_db.Ada);
 
-        var service = new TransactionService(context);
+        var result = await _service.CreateAsync(Tx(category.Id, _db.Ada, amount));
 
-        var transaction = await service.CreateAsync(
-            description: "Salário",
-            amount: 4200,
-            date: DateTime.UtcNow,
-            type: type,
-            categoryId: category.Id,
-            userId: user.Id
-        );
+        result.Failed.Should().BeTrue();
+        result.Notifications.Should().Contain(n => n.Key == key);
+    }
 
-        transaction.Type.Should().Be(type);
-        transaction.Amount.Should().BePositive("the sign lives in Type, never in Amount");
+    [Fact]
+    public async Task Create_Should_Reject_A_Description_That_Is_Too_Short()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        var result = await _service.CreateAsync(Tx(category.Id, _db.Ada, description: "x"));
+
+        result.Failed.Should().BeTrue();
+        result.Notifications.Should().Contain(n => n.Key == "Description");
+    }
+
+    [Fact]
+    public async Task Create_Should_Persist_The_Type()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        await _service.CreateAsync(Tx(category.Id, _db.Ada, 5000m, TransactionType.Income));
+
+        var stored = (await _service.GetAllAsync(_db.Ada)).Single();
+        stored.Type.Should().Be(TransactionType.Income);
+    }
+
+    [Fact]
+    public async Task Amount_Should_Keep_Its_Cents_Through_The_Database()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        await _service.CreateAsync(Tx(category.Id, _db.Ada, 1234.56m));
+
+        (await _service.GetAllAsync(_db.Ada)).Single().Amount.Should().Be(1234.56m);
     }
 
     [Fact]
     public async Task Update_Should_Change_The_Type()
     {
-        var context = DbContextFixture.CreateContext(Guid.NewGuid().ToString());
-        var user = await AddUserAsync(context, "teste@gmail.com");
-        var category = await AddCategoryAsync(context, user.Id);
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        var created = (await _service.CreateAsync(Tx(category.Id, _db.Ada))).Value!;
 
-        var service = new TransactionService(context);
+        var result = await _service.UpdateAsync(
+            created.Id, Tx(category.Id, _db.Ada, 100m, TransactionType.Income));
 
-        var transaction = await service.CreateAsync(
-            description: "Estorno",
-            amount: 50,
-            date: DateTime.UtcNow,
-            type: TransactionType.Expense,
-            categoryId: category.Id,
-            userId: user.Id
-        );
+        result.Success.Should().BeTrue();
+        (await _service.GetByIdAsync(created.Id, _db.Ada))!.Type.Should().Be(TransactionType.Income);
+    }
 
-        var updated = await service.UpdateAsync(
-            id: transaction.Id,
-            description: "Estorno",
-            amount: 50,
-            date: DateTime.UtcNow,
-            type: TransactionType.Income,
-            categoryId: category.Id,
-            userId: user.Id
-        );
+    [Fact]
+    public async Task Update_Should_Not_Reach_Another_Users_Transaction()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        var bobs = await _db.AddCategoryAsync(_db.Bob);
+        var created = (await _service.CreateAsync(Tx(category.Id, _db.Ada))).Value!;
 
-        updated.Type.Should().Be(TransactionType.Income);
+        var result = await _service.UpdateAsync(created.Id, Tx(bobs.Id, _db.Bob, 999m));
+
+        result.Failed.Should().BeTrue();
+        (await _service.GetByIdAsync(created.Id, _db.Ada))!.Amount.Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task Delete_Should_Not_Reach_Another_Users_Transaction()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        var created = (await _service.CreateAsync(Tx(category.Id, _db.Ada))).Value!;
+
+        (await _service.DeleteAsync(created.Id, _db.Bob)).Failed.Should().BeTrue();
+        (await _service.GetByIdAsync(created.Id, _db.Ada)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetAll_Should_List_Newest_First()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        await _service.CreateAsync(new Transaction("Antiga", 10m, Today.AddDays(-5), TransactionType.Expense, category.Id, _db.Ada));
+        await _service.CreateAsync(new Transaction("Nova", 20m, Today, TransactionType.Expense, category.Id, _db.Ada));
+
+        var all = await _service.GetAllAsync(_db.Ada);
+
+        all.Select(t => t.Description).Should().Equal("Nova", "Antiga");
+    }
+
+    [Fact]
+    public async Task Deleting_A_Category_Should_Delete_Its_Transactions()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        await _service.CreateAsync(Tx(category.Id, _db.Ada));
+
+        var categories = new CategoryService(_db);
+        (await categories.DeleteAsync(category.Id, _db.Ada)).Success.Should().BeTrue();
+
+        (await _service.GetAllAsync(_db.Ada)).Should().BeEmpty("the cascade is enforced by the database");
     }
 }

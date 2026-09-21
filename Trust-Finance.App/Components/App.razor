@@ -1,0 +1,81 @@
+@inject SettingsService Settings
+
+<!DOCTYPE html>
+<html lang="pt-BR" data-density="@_density" data-privacy="@(_privacy ? "on" : "off")">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
+    <base href="/" />
+    <ResourcePreloader />
+    @* Applies the saved theme before the first paint, so there is no flash of the wrong one. *@
+    <script src="@Assets["theme.js"]"></script>
+    @* Colour tokens are generated from ChartPalette, the one place they are written
+       down, so the page and the charts cannot drift apart. *@
+    <style>@((MarkupString)ChartPalette.CssTokens())</style>
+    @if (_accent is not null)
+    {
+        @* The user's chosen accent, layered over the generated tokens rather than
+           replacing them, so only the one colour they picked changes. *@
+        <style>@((MarkupString)$":root {{ --series-1: {_accent}; --series-1-strong: {_accent}; }}")</style>
+    }
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["TrustFinance.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string _density = "comfortable";
+    private bool _privacy;
+    private string? _accent;
+
+    // Density, privacy and accent are read here rather than in the layout because they
+    // belong on <html> and have to be right on the very first paint — a page that
+    // un-blurs a balance a moment after loading has already shown it.
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext?.User.Identity?.IsAuthenticated != true)
+            return;
+
+        try
+        {
+            var settings = await Settings.GetAsync(HttpContext.User.GetUserId());
+            _density = settings.Density == Density.Compact ? "compact" : "comfortable";
+            _privacy = settings.PrivacyMode;
+            _accent = Sanitize(settings.AccentColor);
+        }
+        catch (InvalidOperationException)
+        {
+            // No usable user id on the principal. Defaults are a fine answer here.
+        }
+    }
+
+    /// <summary>
+    /// The accent is interpolated straight into a stylesheet, so only a literal hex
+    /// colour is ever allowed through — anything else is dropped rather than escaped.
+    /// </summary>
+    private static string? Sanitize(string? colour)
+    {
+        if (string.IsNullOrWhiteSpace(colour)) return null;
+
+        var value = colour.Trim();
+        if (value.Length is not (4 or 7) || value[0] != '#') return null;
+
+        return value[1..].All(Uri.IsHexDigit) ? value : null;
+    }
+}

@@ -1,0 +1,16 @@
+@inject IJSRuntime JS
+
+<button type="button" class="btn-ghost btn-danger" @onclick="ClickAsync" disabled="@Disabled">@ChildContent</button>
+
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public EventCallback OnConfirmed { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task ClickAsync()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", Message))
+            await OnConfirmed.InvokeAsync();
+    }
+}

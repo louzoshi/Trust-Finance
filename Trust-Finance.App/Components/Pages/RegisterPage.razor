@@ -1,0 +1,82 @@
+@page "/registrar"
+@layout AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject AccountService Accounts
+@inject NavigationManager Navigation
+
+<PageTitle>Criar conta · Trust Finance</PageTitle>
+
+<EditForm Model="Form" OnValidSubmit="RegisterAsync" FormName="register" class="auth-card">
+    <DataAnnotationsValidator />
+    <div class="auth-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        Trust Finance
+    </div>
+    <h1>Criar conta</h1>
+
+    <label>
+        Nome
+        <InputText @bind-Value="Form.Name" autocomplete="name" required />
+    </label>
+
+    <label>
+        E-mail
+        <InputText @bind-Value="Form.Email" type="email" autocomplete="email" required />
+    </label>
+
+    <label>
+        Senha
+        <InputText @bind-Value="Form.Password" type="password" autocomplete="new-password" required />
+    </label>
+
+    <ValidationSummary class="error-list" />
+    @if (_error is not null)
+    {
+        <ul class="error-list"><li>@_error</li></ul>
+    }
+
+    <button type="submit" class="btn-primary">Criar conta</button>
+
+    <p class="auth-switch">
+        Já tem conta? <a href="login">Entrar</a>
+    </p>
+</EditForm>
+
+@code {
+    [CascadingParameter]
+    public HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    public RegisterForm Form { get; set; } = default!;
+
+    // The framework fills Form from the post; on the first GET there is no post, so
+    // an instance is supplied here rather than in an initializer the binder would overwrite.
+    protected override void OnInitialized() => Form ??= new();
+
+    private string? _error;
+
+    private async Task RegisterAsync()
+    {
+        var result = await Accounts.RegisterAsync(Form.Name, Form.Email, Form.Password);
+        if (result.Failed)
+        {
+            _error = string.Join(" ", result.Messages);
+            return;
+        }
+
+        var user = result.Value!;
+
+        // Straight in after registering: asking someone to type the password they
+        // chose two seconds ago is friction with no security to show for it.
+        var principal = AccountService.CreatePrincipal(user, CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true });
+
+        Navigation.NavigateTo("/");
+    }
+}
