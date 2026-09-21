@@ -30,6 +30,7 @@ builder.Services.AddDbContextFactory<TrustFinanceDbContext>(options =>
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<TransactionService>();
+builder.Services.AddScoped<RecurrenceService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ThemeState>();
 builder.Services.AddScoped<UiState>();

@@ -40,6 +40,7 @@ public class User : Notifiable
 
     public ICollection<Category> Categories { get; private set; } = new List<Category>();
     public ICollection<Transaction> Transactions { get; private set; } = new List<Transaction>();
+    public ICollection<RecurringTransaction> Recurrences { get; private set; } = new List<RecurringTransaction>();
     public ICollection<Trade> Trades { get; private set; } = new List<Trade>();
     public ICollection<WatchItem> Watchlist { get; private set; } = new List<WatchItem>();
     public ICollection<PriceAlert> PriceAlerts { get; private set; } = new List<PriceAlert>();

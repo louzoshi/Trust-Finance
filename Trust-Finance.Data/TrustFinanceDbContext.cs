@@ -10,6 +10,7 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
     public DbSet<User> Users => Set<User>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
+    public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<Trade> Trades => Set<Trade>();
     public DbSet<WatchItem> Watchlist => Set<WatchItem>();
     public DbSet<PriceAlert> PriceAlerts => Set<PriceAlert>();
@@ -26,6 +27,7 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
         modelBuilder.ApplyConfiguration(new UserMap());
         modelBuilder.ApplyConfiguration(new CategoryMap());
         modelBuilder.ApplyConfiguration(new TransactionMap());
+        modelBuilder.ApplyConfiguration(new RecurringTransactionMap());
         modelBuilder.ApplyConfiguration(new TradeMap());
         modelBuilder.ApplyConfiguration(new WatchItemMap());
         modelBuilder.ApplyConfiguration(new PriceAlertMap());

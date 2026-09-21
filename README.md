@@ -35,19 +35,21 @@ a real database with the real migrations applied.
 
 ```
 Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
-  Entities/              User, Category, Transaction, Trade, Budget, alerts, settings
-  Finance/               MonthlyFlow: the cash dashboard calculation
+  Entities/              User, Category, Transaction, RecurringTransaction, Trade,
+                         Budget, alerts, settings
+  Finance/               MonthlyFlow: the cash dashboard calculation;
+                         Schedule: when a recurrence falls due
   Investing/             Portfolio: positions, average price, realized/unrealized
   Planning/              Budgets, goals and the notification rules
   Slug.cs                "Mercado & Padaria" -> "mercado-padaria"
 Trust-Finance.Data/      EF Core: DbContext, entity mappings, migrations
 Trust-Finance.App/       The Blazor Server app
-  Components/Pages/      Dashboard, transactions, categories, portfolio, market,
-                         goals, settings, login, register
+  Components/Pages/      Dashboard, transactions, recurrences, categories,
+                         portfolio, market, goals, settings, login, register
   Components/Shared/     Charts, stat tiles, notification tray, palette
   Components/Layout/     Signed-in shell and the bare auth layout
-  Services/              Account, Category, Transaction, Investment, Watchlist,
-                         Alert, Budget, Notification, Settings, UiState
+  Services/              Account, Category, Transaction, Recurrence, Investment,
+                         Watchlist, Alert, Budget, Notification, Settings, UiState
   Services/Market/       Provider abstraction, brapi.dev client, offline catalogue
   Forms/                 Form models and their validation attributes
   wwwroot/               Stylesheet and the pre-paint theme script
@@ -70,7 +72,16 @@ without a database.
 - **Categories** — full CRUD, owned by the user who created them. Slugs are
   unique per user, so two people can each have a `mercado` category.
 - **Transactions** — full CRUD, each with a direction (income or expense), an
-  amount stored positive, a date and a category.
+  amount stored positive, a date and a category. The list is filtered by period
+  (this month, last month, three months, this year, everything, or a custom
+  range) with income, expense and balance for whatever is showing.
+- **Recurring transactions** — salary, rent, subscriptions: weekly, monthly or
+  yearly, from a start date, with an optional end. Each occurrence is posted as
+  an ordinary transaction the first time the app is opened on or after its date,
+  so it can be adjusted or deleted on its own, and it stays on the ledger if the
+  recurrence is later removed. A monthly recurrence on the 31st lands on the
+  28th of February and back on the 31st of March — occurrences are computed from
+  the start date, never from the previous one, so they cannot drift.
 - **Portfolio** — buys and sells with fees, weighted average price, realized and
   unrealized results, allocation by asset class and day change.
 - **Market** — browse stocks, FIIs, ETFs, BDRs, fixed income and crypto with
@@ -185,6 +196,11 @@ What it checks, beyond the happy paths:
 - Fees raise the cost basis on a buy and cut proceeds on a sell
 - A holding with no quote is valued at cost and flagged, never at zero
 - Budgets count expenses only, so income cannot buy back spent room
+- A recurrence posts every occurrence due up to today, once, and stops at its
+  end date; correcting it never re-posts what was already posted; deleting it
+  keeps the rows it posted
+- The period filter keeps both ends of the range and never shows another
+  user's rows
 
 **Integration** (`Trust-Finance.IntegrationTests`) boots the whole app in-process
 and talks to it over HTTP: every page renders, an anonymous request is sent to
@@ -220,9 +236,7 @@ handful of real people use, not a business-management system.
 
 **Towards v1.0**
 
-- Recurring transactions (salary, rent, subscriptions)
-- Date filtering and paging on the transactions list, so a long history stays
-  workable
+- Paging on the transactions list, for a "Tudo" view that spans years
 - Dividends received as first-class records, feeding a real yield-on-cost
 - Portfolio value over time, charted against CDI
 - Editing an account: display name, email, password

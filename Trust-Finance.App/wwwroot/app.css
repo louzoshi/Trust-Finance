@@ -639,6 +639,12 @@ a {
   border-color: var(--border);
 }
 
+/* A badge that follows text on the same line. */
+.badge-tag {
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
 .chip-row {
   display: flex;
   gap: var(--space-2);
@@ -666,6 +672,24 @@ a {
   background: var(--series-1);
   border-color: var(--series-1);
   color: #fff;
+}
+
+/* The income / expense / balance strip beside the period chips on the ledger. */
+.period-totals {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.period-balance {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.period-range {
+  max-width: 420px;
 }
 
 /* ------------------------------------------------------------------- forms */

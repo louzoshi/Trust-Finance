@@ -1,5 +1,6 @@
 @page "/"
 @inject TransactionService Transactions
+@inject RecurrenceService Recurrences
 @inject CategoryService Categories
 @inject InvestmentService Investments
 @inject BudgetService Budgets
@@ -201,6 +202,8 @@ else
         }
 
         var userId = await CurrentUser.IdAsync();
+        await Recurrences.PostDueAsync(userId);
+
         var categories = await Categories.GetAllAsync(userId);
         var transactions = await Transactions.GetAllAsync(userId);
 

@@ -1,0 +1,228 @@
+@page "/recorrentes"
+@inject RecurrenceService Recurrences
+@inject CategoryService Categories
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Recorrentes · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Recorrentes</h1>
+        <p class="page-subtitle">Salário, aluguel, assinaturas — lançados sozinhos quando vencem</p>
+    </div>
+    <a href="lancamentos" class="btn-soft">Lançamentos</a>
+</div>
+
+<section class="card">
+    <h2 class="card-title">@(_editingId is null ? "Nova recorrência" : "Editar recorrência")</h2>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Descrição
+            <InputText @bind-Value="_form.Description" maxlength="100" />
+        </label>
+        <label>
+            Valor
+            <InputNumber @bind-Value="_form.Amount" step="0.01" min="0.01" />
+        </label>
+        <label>
+            Tipo
+            <InputSelect @bind-Value="_form.Type">
+                <option value="@TransactionType.Expense">Despesa</option>
+                <option value="@TransactionType.Income">Receita</option>
+            </InputSelect>
+        </label>
+        <label>
+            Categoria
+            <InputSelect @bind-Value="_form.CategoryId">
+                <option value="0" disabled>Escolha…</option>
+                @foreach (var c in _categories ?? [])
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            Frequência
+            <InputSelect @bind-Value="_form.Frequency">
+                @foreach (var f in Enum.GetValues<Frequency>())
+                {
+                    <option value="@f">@f.Label()</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            Primeira data
+            <InputDate @bind-Value="_form.StartDate" />
+        </label>
+        <label>
+            Até (opcional)
+            <InputDate @bind-Value="_form.EndDate" />
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <ErrorList Messages="_formErrors" />
+    <p class="field-hint">
+        Cada vencimento vira um lançamento comum, que você pode ajustar ou excluir sem afetar
+        os próximos. Uma data no passado lança tudo o que já venceu até hoje.
+    </p>
+    @if (_categories is { Count: 0 })
+    {
+        <p class="page-status">
+            Crie uma categoria primeiro — toda recorrência precisa de uma.
+            <a href="categorias" class="card-link">Ir para categorias</a>
+        </p>
+    }
+</section>
+
+<section class="card">
+    <ErrorList Messages="_listErrors" />
+    @if (_posted > 0)
+    {
+        <p class="page-status">@(_posted == 1 ? "1 lançamento vencido foi registrado agora." : $"{_posted} lançamentos vencidos foram registrados agora.")</p>
+    }
+    @if (_recurrences is null)
+    {
+        <p class="page-status">Carregando recorrências…</p>
+    }
+    else if (_recurrences.Count == 0)
+    {
+        <p class="page-status">Nenhuma recorrência ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Descrição</th>
+                    <th>Categoria</th>
+                    <th>Frequência</th>
+                    <th>Próximo</th>
+                    <th>Até</th>
+                    <th class="num">Valor</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _recurrences)
+                {
+                    var income = r.Type == TransactionType.Income;
+                    <tr>
+                        <td data-label="Descrição">@r.Description</td>
+                        <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(r.CategoryId, "—"))</td>
+                        <td data-label="Frequência">@r.Frequency.Label()</td>
+                        <td data-label="Próximo">
+                            @if (r.IsFinished)
+                            {
+                                <span class="badge badge-muted">Encerrada</span>
+                            }
+                            else
+                            {
+                                @r.NextDate.ToString("dd/MM/yyyy")
+                            }
+                        </td>
+                        <td data-label="Até">@(r.EndDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td data-label="Valor" class="num sensitive @(income ? "text-income" : "text-expense")">@Money.Signed(r.Amount, r.Type)</td>
+                        <td class="actions">
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(r)">Editar</button>
+                            <ConfirmButton Message="@($"Encerrar \"{r.Description}\"? Os lançamentos já feitos continuam.")" OnConfirmed="() => DeleteAsync(r)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private int _userId;
+    private List<RecurringTransaction>? _recurrences;
+    private List<Category>? _categories;
+    private Dictionary<int, string> _categoryNames = new();
+    private RecurrenceForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private int _posted;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _form = RecurrenceForm.Empty(Today);
+        _categories = await Categories.GetAllAsync(_userId);
+        _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
+
+        // Not announced here: with prerendering this runs twice, and the second pass
+        // always finds nothing left to post.
+        await Recurrences.PostDueAsync(_userId);
+        _recurrences = await Recurrences.GetAllAsync(_userId);
+    }
+
+    private async Task PostAndLoadAsync()
+    {
+        _posted = await Recurrences.PostDueAsync(_userId);
+        _recurrences = await Recurrences.GetAllAsync(_userId);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Recurrences.CreateAsync(_form.ToRecurrence(_userId))
+            : await Recurrences.UpdateAsync(_editingId.Value, _form.ToRecurrence(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            // A start date in the past is due right now, so the count is shown straight away.
+            await PostAndLoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(RecurringTransaction recurrence)
+    {
+        _editingId = recurrence.Id;
+        _form = RecurrenceForm.From(recurrence);
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = RecurrenceForm.Empty(Today);
+    }
+
+    private async Task DeleteAsync(RecurringTransaction recurrence)
+    {
+        var result = await Recurrences.DeleteAsync(recurrence.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == recurrence.Id) CancelEdit();
+            _posted = 0;
+            _recurrences = await Recurrences.GetAllAsync(_userId);
+        }
+    }
+}

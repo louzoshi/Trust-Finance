@@ -27,5 +27,12 @@ public class TransactionMap : IEntityTypeConfiguration<Transaction>
             .WithMany(u => u.Transactions)
             .HasForeignKey(t => t.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Removing a recurrence stops the future; the rows it already posted are history
+        // and stay, merely no longer traced back to it.
+        builder.HasOne(t => t.Recurrence)
+            .WithMany(r => r.Transactions)
+            .HasForeignKey(t => t.RecurringTransactionId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

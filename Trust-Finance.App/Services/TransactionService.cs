@@ -18,6 +18,26 @@ public class TransactionService(IDbContextFactory<TrustFinanceDbContext> factory
             .ToListAsync();
     }
 
+    /// <summary>The user's transactions inside <paramref name="period"/>, both ends inclusive, newest first.</summary>
+    public async Task<List<Transaction>> GetAsync(int userId, Period period)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+
+        var query = db.Transactions
+            .AsNoTracking()
+            .Where(t => t.UserId == userId);
+
+        if (period.From is { } from)
+            query = query.Where(t => t.Date >= from);
+        if (period.To is { } to)
+            query = query.Where(t => t.Date <= to);
+
+        return await query
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.Id)
+            .ToListAsync();
+    }
+
     public async Task<Transaction?> GetByIdAsync(int id, int userId)
     {
         await using var db = await factory.CreateDbContextAsync();

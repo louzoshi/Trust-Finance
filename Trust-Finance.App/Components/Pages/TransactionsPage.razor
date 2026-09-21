@@ -1,5 +1,6 @@
 @page "/lancamentos"
 @inject TransactionService Transactions
+@inject RecurrenceService Recurrences
 @inject CategoryService Categories
 @inject CurrentUser CurrentUser
 @inject TimeProvider Clock
@@ -11,6 +12,7 @@
         <h1 class="page-title">Lançamentos</h1>
         <p class="page-subtitle">Receitas e despesas do seu caixa</p>
     </div>
+    <a href="recorrentes" class="btn-soft">Recorrentes</a>
 </div>
 
 <section class="card">
@@ -66,14 +68,48 @@
 </section>
 
 <section class="card">
+    <div class="card-header">
+        <div class="chip-row" role="group" aria-label="Período">
+            @foreach (var preset in Presets)
+            {
+                <button type="button" class="chip @(_preset == preset ? "selected" : null)"
+                        @onclick="() => SelectPresetAsync(preset)">@PresetLabel(preset)</button>
+            }
+        </div>
+        @if (_transactions is { Count: > 0 })
+        {
+            <div class="period-totals">
+                <span class="text-income sensitive">+@Money.Format(_income)</span>
+                <span class="text-expense sensitive">−@Money.Format(_expense)</span>
+                <span class="period-balance sensitive @(_balance < 0 ? "text-expense" : null)">= @Money.Signed(_balance)</span>
+            </div>
+        }
+    </div>
+    @if (_preset == Preset.Custom)
+    {
+        <div class="inline-form period-range">
+            <label>
+                De
+                <InputDate TValue="DateOnly?" Value="_from" ValueExpression="() => _from" ValueChanged="SetFromAsync" />
+            </label>
+            <label>
+                Até
+                <InputDate TValue="DateOnly?" Value="_to" ValueExpression="() => _to" ValueChanged="SetToAsync" />
+            </label>
+        </div>
+    }
     <ErrorList Messages="_listErrors" />
+    @if (_savedOutside is { } saved)
+    {
+        <p class="page-status">Lançamento de @saved.ToString("dd/MM/yyyy") salvo — está fora do período exibido.</p>
+    }
     @if (_transactions is null)
     {
         <p class="page-status">Carregando lançamentos…</p>
     }
     else if (_transactions.Count == 0)
     {
-        <p class="page-status">Nenhum lançamento ainda.</p>
+        <p class="page-status">@(_preset == Preset.All ? "Nenhum lançamento ainda." : "Nenhum lançamento neste período.")</p>
     }
     else
     {
@@ -95,7 +131,13 @@
                     var income = t.Type == TransactionType.Income;
                     <tr>
                         <td data-label="Data">@t.Date.ToString("dd/MM/yyyy")</td>
-                        <td data-label="Descrição">@t.Description</td>
+                        <td data-label="Descrição">
+                            @t.Description
+                            @if (t.IsRecurring)
+                            {
+                                <span class="badge badge-muted badge-tag" title="Lançado por uma recorrência">Recorrente</span>
+                            }
+                        </td>
                         <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(t.CategoryId, "—"))</td>
                         <td data-label="Tipo"><span class="badge @(income ? "badge-income" : "badge-expense")">@(income ? "Receita" : "Despesa")</span></td>
                         <td data-label="Valor" class="num sensitive @(income ? "text-income" : "text-expense")">@Money.Signed(t.Amount, t.Type)</td>
@@ -124,6 +166,14 @@
     private List<string> _formErrors = [];
     private List<string> _listErrors = [];
 
+    private Preset _preset = Preset.ThisMonth;
+    private DateOnly? _from;
+    private DateOnly? _to;
+    private decimal _income;
+    private decimal _expense;
+    private decimal _balance;
+    private DateOnly? _savedOutside;
+
     private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
 
     protected override async Task OnInitializedAsync()
@@ -132,13 +182,71 @@
         _form = TransactionForm.Empty(Today);
         _categories = await Categories.GetAllAsync(_userId);
         _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
+
+        // Anything that fell due since the app was last opened lands before the list is read.
+        await Recurrences.PostDueAsync(_userId);
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        _transactions = await Transactions.GetAllAsync(_userId);
+        _transactions = await Transactions.GetAsync(_userId, CurrentPeriod);
+        _income = _transactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount);
+        _expense = _transactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount);
+        _balance = _income - _expense;
     }
+
+    // ---------------------------------------------------------------- period
+
+    private enum Preset { ThisMonth, LastMonth, ThreeMonths, ThisYear, All, Custom }
+
+    private static readonly Preset[] Presets = Enum.GetValues<Preset>();
+
+    private static string PresetLabel(Preset p) => p switch
+    {
+        Preset.ThisMonth => "Este mês",
+        Preset.LastMonth => "Mês passado",
+        Preset.ThreeMonths => "3 meses",
+        Preset.ThisYear => "Este ano",
+        Preset.All => "Tudo",
+        _ => "Personalizado"
+    };
+
+    private Period CurrentPeriod => _preset switch
+    {
+        Preset.ThisMonth => Period.ThisMonth(Today),
+        Preset.LastMonth => Period.LastMonth(Today),
+        Preset.ThreeMonths => Period.LastThreeMonths(Today),
+        Preset.ThisYear => Period.ThisYear(Today),
+        Preset.Custom => new Period(_from, _to),
+        _ => Period.All
+    };
+
+    private async Task SelectPresetAsync(Preset preset)
+    {
+        _savedOutside = null;
+
+        // Custom starts from the range that was showing, so the user adjusts rather than re-types.
+        if (preset == Preset.Custom && _preset != Preset.Custom)
+            (_from, _to) = (CurrentPeriod.From, CurrentPeriod.To);
+
+        _preset = preset;
+        await LoadAsync();
+    }
+
+    private async Task SetFromAsync(DateOnly? value)
+    {
+        _from = value;
+        await LoadAsync();
+    }
+
+    private async Task SetToAsync(DateOnly? value)
+    {
+        _to = value;
+        await LoadAsync();
+    }
+
+    // ------------------------------------------------------------------ form
 
     private async Task SaveAsync()
     {
@@ -153,6 +261,10 @@
             _formErrors = result.Messages;
         else
         {
+            // A row saved outside the range on screen would otherwise look like it vanished.
+            var date = _form.Date ?? Today;
+            _savedOutside = CurrentPeriod.Contains(date) ? null : date;
+
             CancelEdit();
             await LoadAsync();
         }

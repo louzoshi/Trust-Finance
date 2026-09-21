@@ -4,6 +4,7 @@
 @inject SettingsService Settings
 @inject InvestmentService Investments
 @inject TransactionService Transactions
+@inject RecurrenceService Recurrences
 @inject CurrentUser CurrentUser
 @inject UiState Ui
 @inject TimeProvider Clock
@@ -197,6 +198,7 @@ else
     {
         _userId = await CurrentUser.IdAsync();
         _monthName = Clock.GetLocalNow().ToString("MMMM");
+        await Recurrences.PostDueAsync(_userId);
         await LoadAsync();
     }
 

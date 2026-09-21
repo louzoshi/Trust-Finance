@@ -37,6 +37,13 @@ public class Transaction : Notifiable
         UserId = userId;
     }
 
+    /// <summary>One occurrence of a recurrence, on the date it fell due.</summary>
+    public Transaction(RecurringTransaction source, DateOnly date)
+        : this(source.Description, source.Amount, date, source.Type, source.CategoryId, source.UserId)
+    {
+        RecurringTransactionId = source.Id;
+    }
+
     public int Id { get; private set; }
     public string Description { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
@@ -48,6 +55,15 @@ public class Transaction : Notifiable
 
     public int UserId { get; private set; }
     public User User { get; private set; } = null!;
+
+    /// <summary>
+    /// Set when this row was posted by a recurrence. It is a trace, not a bond: the row
+    /// stays editable and deletable on its own, and outlives the recurrence.
+    /// </summary>
+    public int? RecurringTransactionId { get; private set; }
+    public RecurringTransaction? Recurrence { get; private set; }
+
+    public bool IsRecurring => RecurringTransactionId is not null;
 
     /// <summary>The amount as it affects the balance: positive for income, negative for expense.</summary>
     public decimal SignedAmount => Type == TransactionType.Income ? Amount : -Amount;
