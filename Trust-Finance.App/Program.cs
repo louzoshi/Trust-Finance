@@ -27,10 +27,13 @@ var databasePath = builder.Configuration.GetConnectionString("Default")
 builder.Services.AddDbContextFactory<TrustFinanceDbContext>(options =>
     options.UseSqlite(databasePath));
 
-builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<UserAccountService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<RecurrenceService>();
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<CategoryRuleService>();
+builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ThemeState>();
 builder.Services.AddScoped<UiState>();

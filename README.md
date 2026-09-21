@@ -35,10 +35,12 @@ a real database with the real migrations applied.
 
 ```
 Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
-  Entities/              User, Category, Transaction, RecurringTransaction, Trade,
-                         Budget, alerts, settings
+  Entities/              User, Account, Category, CategoryRule, Transaction,
+                         RecurringTransaction, Trade, Budget, alerts, settings
+  Banking/               OFX statements, boleto typed lines, Pix BR Code
   Finance/               MonthlyFlow: the cash dashboard calculation;
-                         Schedule: when a recurrence falls due
+                         Schedule: when a recurrence falls due;
+                         CardStatements: statements and account balances
   Investing/             Portfolio: positions, average price, realized/unrealized;
                          Performance: XIRR and the CDI comparison
   Tax/                   CapitalGains: the monthly DARF computation
@@ -46,13 +48,14 @@ Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
   Slug.cs                "Mercado & Padaria" -> "mercado-padaria"
 Trust-Finance.Data/      EF Core: DbContext, entity mappings, migrations
 Trust-Finance.App/       The Blazor Server app
-  Components/Pages/      Dashboard, transactions, recurrences, categories,
-                         portfolio, payouts, tax, market, goals, settings, login,
-                         register
+  Components/Pages/      Dashboard, transactions, accounts, card statements,
+                         import, recurrences, categories, portfolio, payouts,
+                         tax, market, goals, settings, login, register
   Components/Shared/     Charts, stat tiles, notification tray, palette
   Components/Layout/     Signed-in shell and the bare auth layout
-  Services/              Account, Category, Transaction, Recurrence, Investment,
-                         Payout, CorporateAction, Watchlist, Alert, Budget,
+  Services/              UserAccount, Account, Category, CategoryRule,
+                         Transaction, Recurrence, Import, Investment, Payout,
+                         CorporateAction, Watchlist, Alert, Budget,
                          Notification, Settings, UiState
   Services/Market/       Provider abstraction, brapi.dev client, offline catalogue,
                          Banco Central CDI series
@@ -76,8 +79,31 @@ without a database.
   page requires it; the login and register pages are the two exceptions.
 - **Categories** — full CRUD, owned by the user who created them. Slugs are
   unique per user, so two people can each have a `mercado` category.
+- **Accounts** — checking, savings, cash and credit cards. Every transaction
+  belongs to one; a new user gets a checking account without being asked. The
+  screen reports cash on hand, what the cards owe and the net of the two.
+- **Credit-card statements** — a purchase lands on the statement closing on or
+  after its date, so buying the day after closing falls on the month after;
+  instalments are split across months with the odd cent on the first; paying the
+  statement is a transfer from another account, and each statement reads open,
+  paid or overdue.
+- **Transfers** — two halves tied by one id, saved and deleted together. Neither
+  half counts as income or expense anywhere: moving money between your own
+  pockets is not earning or spending it.
+- **OFX import** — a statement from a bank or a card, previewed line by line
+  before anything is written. The bank's own id (FITID) travels with every
+  imported row under a unique index, so importing the same file twice creates
+  nothing the second time. A row typed by hand before the statement arrived is
+  recognised by amount and date and merely reconciled, never duplicated. The
+  categories you pick are remembered as rules, so the next statement from the
+  same bank arrives mostly filed.
+- **Boleto and Pix** — paste a boleto's typed line or a Pix copia-e-cola code on
+  the transactions screen and the form fills itself: value, due date and who is
+  being paid. Both are validated first — a boleto's field and general check
+  digits (modulo 10 and 11) and a Pix payload's CRC-16 — so a mistyped code is
+  refused rather than filed.
 - **Transactions** — full CRUD, each with a direction (income or expense), an
-  amount stored positive, a date and a category. The list is filtered by period
+  amount stored positive, a date, a category and an account. The list is filtered by period
   (this month, last month, three months, this year, everything, or a custom
   range) with income, expense and balance for whatever is showing.
 - **Recurring transactions** — salary, rent, subscriptions: weekly, monthly or
@@ -236,6 +262,17 @@ What it checks, beyond the happy paths:
   within the year, a split on a quiet day still reaches the next sale
 - XIRR recovers a known rate, compounding at CDI skips the deposit day, the
   annualization is on 252 business days
+- Importing the same statement twice creates its lines once; an overlapping file
+  adds only what is new; a hand-typed row is reconciled rather than duplicated,
+  and cannot be claimed by two lines; the same bank id on another account is
+  still new; one uncategorized line stops the whole import
+- A boleto with a mistyped field is refused, and so is one whose fields check but
+  whose general digit does not; the due-date factor picks the cycle nearest to
+  today, since it rolled over in February 2025
+- A Pix code with one changed digit fails its CRC; the CRC itself matches the
+  reference vector for "123456789"
+- OFX parses both the SGML flavour banks export and the XML one, with the time
+  zone suffix dropped and a comma decimal accepted
 
 **Integration** (`Trust-Finance.IntegrationTests`) boots the whole app in-process
 and talks to it over HTTP: every page renders, an anonymous request is sent to
@@ -281,8 +318,8 @@ handful of real people use, not a business-management system.
 
 **Later**
 
-- CSV / OFX statement import and broker note (nota de corretagem) parsing
-- Multiple accounts (checking, credit card, cash)
+- CSV import and broker note (nota de corretagem) parsing
+- Open Finance Brasil: ingesting accounts and cards in the API's own shape
 - The annual return: "Bens e direitos" at cost, exempt income, income taxed
   at source, straight from the ledger
 - A public deployment over HTTPS, for the people who would rather not run it

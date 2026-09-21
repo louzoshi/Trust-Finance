@@ -9,10 +9,11 @@ public class MonthlyFlowTests
     private static readonly Dictionary<int, string> Categories = new() { [1] = "Mercado", [2] = "Lazer", [3] = "Salário" };
 
     private const int Someone = 1;
+    private const int Wallet = 9;
     private static readonly CategoryLabels Labels = new(Other: "Outras", Uncategorized: "Sem categoria");
 
     private static Transaction Tx(int id, decimal amount, TransactionType type, DateOnly date, int categoryId = 1)
-        => new($"#{id}", amount, date, type, categoryId, Someone);
+        => new($"#{id}", amount, date, type, categoryId, Wallet, Someone);
 
     [Fact]
     public void LastMonths_Should_End_In_The_Current_Month_And_Cross_The_Year()

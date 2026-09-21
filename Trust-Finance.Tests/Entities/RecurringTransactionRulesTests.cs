@@ -5,10 +5,11 @@ namespace TrustFinance.Tests.Entities;
 public class RecurringTransactionRulesTests
 {
     private const int Someone = 1;
+    private const int Wallet = 9;
     private const int Category = 7;
 
     private static RecurringTransaction Monthly(DateOnly start, DateOnly? end = null, decimal amount = 1500m)
-        => new("Aluguel", amount, TransactionType.Expense, Category, Frequency.Monthly, start, end, Someone);
+        => new("Aluguel", amount, TransactionType.Expense, Category, Wallet, Frequency.Monthly, start, end, Someone);
 
     [Fact]
     public void A_Good_Recurrence_Should_Be_Valid_And_Due_On_Its_Start_Date()
@@ -26,7 +27,7 @@ public class RecurringTransactionRulesTests
     [InlineData("Aluguel", -1, "Amount")]
     public void A_Bad_Recurrence_Should_Say_Which_Field(string description, decimal amount, string key)
     {
-        var r = new RecurringTransaction(description, amount, TransactionType.Expense, Category,
+        var r = new RecurringTransaction(description, amount, TransactionType.Expense, Category, Wallet,
             Frequency.Monthly, new DateOnly(2026, 9, 1), null, Someone);
 
         r.IsInvalid.Should().BeTrue();

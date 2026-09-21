@@ -1,0 +1,132 @@
+@page "/contas/{CardId:int}"
+@inject AccountService Accounts
+@inject CategoryService Categories
+@inject TransactionService Transactions
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Fatura · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">@(_card?.Name ?? "Cartão")</h1>
+        <p class="page-subtitle">
+            @if (_card is not null)
+            {
+                <span>Fecha dia @_card.ClosingDay, vence dia @_card.DueDay</span>
+            }
+        </p>
+    </div>
+    <a href="contas" class="btn-soft">Contas</a>
+</div>
+
+@if (_card is null)
+{
+    <p class="page-status">Carregando…</p>
+}
+else if (_statements is { Count: 0 })
+{
+    <p class="page-status">Nenhuma compra neste cartão ainda.</p>
+}
+else
+{
+    @foreach (var s in _statements!)
+    {
+        var open = s.IsOpen(Today);
+        <section class="card">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">
+                        Fatura de @s.Closing.ToString("MMMM 'de' yyyy")
+                        @if (open)
+                        {
+                            <span class="badge badge-muted badge-tag">aberta</span>
+                        }
+                        else if (s.IsPaid)
+                        {
+                            <span class="badge badge-income badge-tag">paga</span>
+                        }
+                        else if (s.IsOverdue(Today))
+                        {
+                            <span class="badge badge-expense badge-tag">vencida</span>
+                        }
+                    </h2>
+                    <p class="card-subtitle">Fechou @s.Closing.ToString("dd/MM") · vence @s.Due.ToString("dd/MM/yyyy")</p>
+                </div>
+                <div class="period-totals">
+                    <span class="sensitive">@Money.Format(s.Purchases) em compras</span>
+                    @if (s.Payments > 0)
+                    {
+                        <span class="text-income sensitive">−@Money.Format(s.Payments) pago</span>
+                    }
+                    <span class="period-balance sensitive @(s.Balance > 0 ? "text-expense" : null)">@Money.Format(s.Balance) @(s.Balance > 0 ? "a pagar" : "quitada")</span>
+                </div>
+            </div>
+            @if (s.Lines.Count == 0)
+            {
+                <p class="page-status">Nenhum lançamento nesta fatura.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Descrição</th>
+                            <th>Categoria</th>
+                            <th class="num">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in s.Lines.OrderByDescending(t => t.Date).ThenByDescending(t => t.Id))
+                        {
+                            <tr>
+                                <td data-label="Data">@t.Date.ToString("dd/MM/yyyy")</td>
+                                <td data-label="Descrição">
+                                    @t.Description
+                                    @if (t.IsTransfer)
+                                    {
+                                        <span class="badge badge-income badge-tag">pagamento</span>
+                                    }
+                                    else if (t.InstallmentCount is { } n)
+                                    {
+                                        <span class="badge badge-muted badge-tag">@t.InstallmentNumber/@n</span>
+                                    }
+                                </td>
+                                <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(t.CategoryId, "—"))</td>
+                                <td data-label="Valor" class="num sensitive @(t.IsTransfer ? "text-income" : null)">
+                                    @(t.IsTransfer ? "−" + Money.Format(t.Amount) : Money.Format(t.Amount))
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+            }
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public int CardId { get; set; }
+
+    private int _userId;
+    private Account? _card;
+    private IReadOnlyList<CardStatement>? _statements;
+    private Dictionary<int, string> _categoryNames = new();
+
+    private DateOnly Today => DateOnly.FromDateTime(Clock.GetLocalNow().DateTime);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _card = await Accounts.GetByIdAsync(CardId, _userId);
+
+        if (_card is null || !_card.IsCreditCard)
+            return;
+
+        _categoryNames = (await Categories.GetAllAsync(_userId)).ToDictionary(c => c.Id, c => c.Name);
+        _statements = await Accounts.StatementsAsync(CardId, _userId);
+    }
+}

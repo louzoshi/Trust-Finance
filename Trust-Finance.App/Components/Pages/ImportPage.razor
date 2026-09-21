@@ -1,0 +1,242 @@
+@page "/importar"
+@inject ImportService Import
+@inject AccountService Accounts
+@inject CategoryService Categories
+@inject CurrentUser CurrentUser
+
+<PageTitle>Importar extrato · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Importar extrato</h1>
+        <p class="page-subtitle">Arquivo OFX do banco ou do cartão — o mesmo arquivo pode ser importado duas vezes sem duplicar nada</p>
+    </div>
+    <a href="lancamentos" class="btn-soft">Lançamentos</a>
+</div>
+
+<section class="card">
+    <div class="inline-form">
+        <label>
+            Conta
+            <select value="@_accountId" @onchange="OnAccountChanged">
+                @foreach (var a in _accounts ?? [])
+                {
+                    <option value="@a.Id">@a.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Arquivo
+            <InputFile OnChange="OnFileAsync" accept=".ofx,.OFX,text/plain" />
+        </label>
+    </div>
+    <p class="field-hint">
+        Cada linha traz o identificador do banco (FITID). O que já foi importado aparece marcado
+        e é ignorado; o que você já tinha digitado à mão é reconhecido pelo valor e pela data e
+        fica apenas conciliado, sem virar um lançamento repetido.
+    </p>
+    <ErrorList Messages="_errors" />
+    @if (_reading)
+    {
+        <p class="page-status">Lendo o arquivo…</p>
+    }
+</section>
+
+@if (_preview is { } preview)
+{
+    <section class="card">
+        <div class="card-header">
+            <div>
+                <h2 class="card-title">@_fileName</h2>
+                <p class="card-subtitle">
+                    @if (preview.Statement.From is { } from && preview.Statement.To is { } to)
+                    {
+                        <span>@from.ToString("dd/MM/yyyy") a @to.ToString("dd/MM/yyyy") · </span>
+                    }
+                    <span>@preview.Lines.Count linhas</span>
+                    @if (preview.Statement.LedgerBalance is { } bal)
+                    {
+                        <span> · saldo do extrato @Money.Format(bal)</span>
+                    }
+                </p>
+            </div>
+            <div class="form-actions">
+                <label class="check-row">
+                    <InputCheckbox @bind-Value="_learnRules" />
+                    Aprender as categorias para os próximos extratos
+                </label>
+                <button type="button" class="btn-primary" disabled="@_saving" @onclick="CommitAsync">
+                    Importar @preview.Lines.Count(l => l.Include && l.Status != ImportStatus.AlreadyImported) lançamentos
+                </button>
+            </div>
+        </div>
+
+        <div class="stat-row">
+            <StatTile Label="Novos" Value="@preview.NewCount.ToString()" Hint="viram lançamentos" />
+            <StatTile Label="Já conhecidos" Value="@preview.SkippedCount.ToString()" Hint="importados antes, serão ignorados" />
+            <StatTile Label="Conciliados" Value="@preview.MatchedCount.ToString()" Hint="batem com o que você já lançou" />
+        </div>
+
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th class="actions">Importar</th>
+                    <th>Data</th>
+                    <th>Descrição do banco</th>
+                    <th>Situação</th>
+                    <th>Categoria</th>
+                    <th class="num">Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in preview.Lines)
+                {
+                    var known = line.Status == ImportStatus.AlreadyImported;
+                    <tr class="@(known ? "row-muted" : null)">
+                        <td class="actions">
+                            <input type="checkbox" checked="@line.Include" disabled="@known"
+                                   @onchange="e => line.Include = (bool)(e.Value ?? false)" aria-label="Importar esta linha" />
+                        </td>
+                        <td data-label="Data">@line.Source.Date.ToString("dd/MM/yyyy")</td>
+                        <td data-label="Descrição">@line.Source.Memo</td>
+                        <td data-label="Situação">
+                            @switch (line.Status)
+                            {
+                                case ImportStatus.AlreadyImported:
+                                    <span class="badge badge-muted">já importado</span>
+                                    break;
+                                case ImportStatus.MatchesExisting:
+                                    <span class="badge badge-income" title="@($"Bate com \"{line.Existing?.Description}\" de {line.Existing?.Date:dd/MM}")">concilia</span>
+                                    break;
+                                default:
+                                    <span class="badge">novo</span>
+                                    break;
+                            }
+                        </td>
+                        <td data-label="Categoria">
+                            @if (line.Status == ImportStatus.New)
+                            {
+                                <select value="@line.CategoryId" @onchange="e => line.CategoryId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0">
+                                    <option value="0" disabled>Escolha…</option>
+                                    @foreach (var c in _categories ?? [])
+                                    {
+                                        <option value="@c.Id">@c.Name</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <span class="text-muted">@(_categoryNames.GetValueOrDefault(line.CategoryId, "—"))</span>
+                            }
+                        </td>
+                        <td data-label="Valor" class="num sensitive @(line.Source.IsCredit ? "text-income" : "text-expense")">
+                            @Money.Signed(line.Source.Amount)
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </section>
+}
+
+@if (_outcome is { } outcome)
+{
+    <section class="card">
+        <h2 class="card-title">Importação concluída</h2>
+        <p class="page-status">
+            @outcome.Created @(outcome.Created == 1 ? "lançamento criado" : "lançamentos criados"),
+            @outcome.Reconciled @(outcome.Reconciled == 1 ? "conciliado" : "conciliados"),
+            @outcome.Skipped @(outcome.Skipped == 1 ? "ignorado por já estar na base" : "ignorados por já estarem na base")@(outcome.RulesLearned > 0 ? $", {outcome.RulesLearned} regras de categoria aprendidas" : string.Empty).
+        </p>
+        <a class="btn-primary" href="lancamentos">Ver lançamentos</a>
+    </section>
+}
+
+@code {
+    private const long MaxBytes = 8 * 1024 * 1024;
+
+    private int _userId;
+    private List<Account>? _accounts;
+    private List<Category>? _categories;
+    private Dictionary<int, string> _categoryNames = new();
+    private int _accountId;
+    private string? _fileName;
+    private ImportPreview? _preview;
+    private ImportOutcome? _outcome;
+    private bool _learnRules = true;
+    private bool _reading;
+    private bool _saving;
+    private List<string> _errors = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _accounts = await Accounts.GetAllAsync(_userId);
+        _accountId = _accounts.FirstOrDefault(a => !a.IsCreditCard)?.Id ?? _accounts.FirstOrDefault()?.Id ?? 0;
+        _categories = await Categories.GetAllAsync(_userId);
+        _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
+    }
+
+    private void OnAccountChanged(ChangeEventArgs e)
+    {
+        _accountId = int.TryParse(e.Value?.ToString(), out var id) ? id : _accountId;
+
+        // The preview was built against the previous account: what counts as already
+        // imported differs, so it has to be read again.
+        _preview = null;
+        _outcome = null;
+    }
+
+    private async Task OnFileAsync(InputFileChangeEventArgs e)
+    {
+        _errors = [];
+        _outcome = null;
+        _preview = null;
+        _fileName = e.File.Name;
+        _reading = true;
+
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(MaxBytes));
+            var content = await reader.ReadToEndAsync();
+            _preview = await Import.PreviewAsync(content, _accountId, _userId);
+
+            if (_preview.Lines.Count == 0)
+                _errors = ["O extrato não tem lançamentos."];
+        }
+        catch (FormatException ex)
+        {
+            _errors = [ex.Message];
+        }
+        catch (IOException)
+        {
+            _errors = ["O arquivo é grande demais (máximo 8 MB)."];
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private async Task CommitAsync()
+    {
+        if (_preview is null) return;
+
+        _saving = true;
+        _errors = [];
+
+        var result = await Import.CommitAsync(_preview, _accountId, _userId, _learnRules);
+
+        if (result.Failed)
+            _errors = result.Messages;
+        else
+        {
+            _outcome = result.Value;
+            _preview = null;
+        }
+
+        _saving = false;
+    }
+}

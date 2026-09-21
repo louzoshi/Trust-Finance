@@ -65,6 +65,8 @@ public class RecurrenceService(IDbContextFactory<TrustFinanceDbContext> factory,
 
         if (!await CategoryIsReachableAsync(db, recurrence.CategoryId, recurrence.UserId))
             return Result<RecurringTransaction>.Fail(nameof(RecurringTransaction.CategoryId), "Categoria não encontrada");
+        if (!await db.Accounts.AnyAsync(a => a.Id == recurrence.AccountId && a.UserId == recurrence.UserId))
+            return Result<RecurringTransaction>.Fail(nameof(RecurringTransaction.AccountId), "Conta não encontrada");
 
         db.RecurringTransactions.Add(recurrence);
         await db.SaveChangesAsync();
@@ -84,6 +86,8 @@ public class RecurrenceService(IDbContextFactory<TrustFinanceDbContext> factory,
 
         if (!await CategoryIsReachableAsync(db, corrected.CategoryId, corrected.UserId))
             return Result.Fail(nameof(RecurringTransaction.CategoryId), "Categoria não encontrada");
+        if (!await db.Accounts.AnyAsync(a => a.Id == corrected.AccountId && a.UserId == corrected.UserId))
+            return Result.Fail(nameof(RecurringTransaction.AccountId), "Conta não encontrada");
 
         recurrence.CorrectTo(corrected);
         if (recurrence.IsInvalid)

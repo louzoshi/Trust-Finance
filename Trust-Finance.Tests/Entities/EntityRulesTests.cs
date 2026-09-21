@@ -10,6 +10,7 @@ namespace TrustFinance.Tests.Entities;
 public class TradeRulesTests
 {
     private const int Someone = 1;
+    const int Wallet = 9;
     private static readonly DateOnly Date = new(2026, 9, 10);
 
     private static Trade Valid() => new("petr4", AssetClass.Stock, TradeSide.Buy, 100, 30m, 4.90m, Date, Someone);
@@ -86,13 +87,14 @@ public class TradeRulesTests
 public class TransactionRulesTests
 {
     private const int Someone = 1;
+    private const int Wallet = 9;
     private static readonly DateOnly Date = new(2026, 9, 10);
 
     [Fact]
     public void Direction_Should_Come_From_The_Type_Not_The_Sign()
     {
-        var expense = new Transaction("Mercado", 100m, Date, TransactionType.Expense, 1, Someone);
-        var income = new Transaction("Salário", 100m, Date, TransactionType.Income, 1, Someone);
+        var expense = new Transaction("Mercado", 100m, Date, TransactionType.Expense, 1, Wallet, Someone);
+        var income = new Transaction("Salário", 100m, Date, TransactionType.Income, 1, Wallet, Someone);
 
         expense.SignedAmount.Should().Be(-100m);
         income.SignedAmount.Should().Be(100m);
@@ -103,7 +105,7 @@ public class TransactionRulesTests
     [InlineData(-100)]
     public void Should_Refuse_A_Non_Positive_Amount(decimal amount)
     {
-        var transaction = new Transaction("Mercado", amount, Date, TransactionType.Expense, 1, Someone);
+        var transaction = new Transaction("Mercado", amount, Date, TransactionType.Expense, 1, Wallet, Someone);
 
         transaction.IsInvalid.Should().BeTrue();
         transaction.Notifications.Should().Contain(n => n.Key == "Amount");
@@ -112,14 +114,14 @@ public class TransactionRulesTests
     [Fact]
     public void Should_Trim_The_Description()
     {
-        new Transaction("  Mercado  ", 10m, Date, TransactionType.Expense, 1, Someone)
+        new Transaction("  Mercado  ", 10m, Date, TransactionType.Expense, 1, Wallet, Someone)
             .Description.Should().Be("Mercado");
     }
 
     [Fact]
     public void Should_Refuse_An_Unset_Category()
     {
-        new Transaction("Mercado", 10m, Date, TransactionType.Expense, 0, Someone)
+        new Transaction("Mercado", 10m, Date, TransactionType.Expense, 0, Wallet, Someone)
             .Notifications.Should().Contain(n => n.Key == "CategoryId");
     }
 }

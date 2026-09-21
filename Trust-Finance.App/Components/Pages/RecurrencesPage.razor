@@ -1,6 +1,7 @@
 @page "/recorrentes"
 @inject RecurrenceService Recurrences
 @inject CategoryService Categories
+@inject AccountService Accounts
 @inject CurrentUser CurrentUser
 @inject TimeProvider Clock
 
@@ -39,6 +40,15 @@
                 @foreach (var c in _categories ?? [])
                 {
                     <option value="@c.Id">@c.Name</option>
+                }
+            </InputSelect>
+        </label>
+        <label>
+            Conta
+            <InputSelect @bind-Value="_form.AccountId">
+                @foreach (var a in _accounts ?? [])
+                {
+                    <option value="@a.Id">@a.Name</option>
                 }
             </InputSelect>
         </label>
@@ -150,6 +160,7 @@
     private int _userId;
     private List<RecurringTransaction>? _recurrences;
     private List<Category>? _categories;
+    private List<Account>? _accounts;
     private Dictionary<int, string> _categoryNames = new();
     private RecurrenceForm _form = new();
     private int? _editingId;
@@ -163,7 +174,8 @@
     protected override async Task OnInitializedAsync()
     {
         _userId = await CurrentUser.IdAsync();
-        _form = RecurrenceForm.Empty(Today);
+        _accounts = await Accounts.GetAllAsync(_userId);
+        _form = RecurrenceForm.Empty(Today, DefaultAccountId);
         _categories = await Categories.GetAllAsync(_userId);
         _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
 
@@ -207,10 +219,12 @@
         _formErrors = [];
     }
 
+    private int DefaultAccountId => _accounts?.FirstOrDefault(a => !a.IsCreditCard)?.Id ?? _accounts?.FirstOrDefault()?.Id ?? 0;
+
     private void CancelEdit()
     {
         _editingId = null;
-        _form = RecurrenceForm.Empty(Today);
+        _form = RecurrenceForm.Empty(Today, DefaultAccountId);
     }
 
     private async Task DeleteAsync(RecurringTransaction recurrence)

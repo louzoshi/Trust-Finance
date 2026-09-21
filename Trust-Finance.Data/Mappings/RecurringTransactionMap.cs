@@ -25,6 +25,11 @@ public class RecurringTransactionMap : IEntityTypeConfiguration<RecurringTransac
             .HasForeignKey(r => r.CategoryId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne(r => r.Account)
+            .WithMany()
+            .HasForeignKey(r => r.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(r => r.User)
             .WithMany(u => u.Recurrences)
             .HasForeignKey(r => r.UserId)

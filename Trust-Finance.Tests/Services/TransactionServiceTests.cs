@@ -16,9 +16,9 @@ public class TransactionServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private static Transaction Tx(int categoryId, int userId,
+    private Transaction Tx(int categoryId, int userId,
         decimal amount = 100m, TransactionType type = TransactionType.Expense, string description = "Compra")
-        => new(description, amount, Today, type, categoryId, userId);
+        => new(description, amount, Today, type, categoryId, _db.AccountFor(userId), userId);
 
     [Fact]
     public async Task Create_Should_Add_Transaction_For_User()
@@ -130,8 +130,8 @@ public class TransactionServiceTests : IDisposable
     {
         var category = await _db.AddCategoryAsync(_db.Ada);
 
-        await _service.CreateAsync(new Transaction("Antiga", 10m, Today.AddDays(-5), TransactionType.Expense, category.Id, _db.Ada));
-        await _service.CreateAsync(new Transaction("Nova", 20m, Today, TransactionType.Expense, category.Id, _db.Ada));
+        await _service.CreateAsync(new Transaction("Antiga", 10m, Today.AddDays(-5), TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
+        await _service.CreateAsync(new Transaction("Nova", 20m, Today, TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
 
         var all = await _service.GetAllAsync(_db.Ada);
 
@@ -145,9 +145,9 @@ public class TransactionServiceTests : IDisposable
         foreach (var day in new[] { 31, 1, 15, 30 })
         {
             var date = day == 31 ? new DateOnly(2026, 8, 31) : new DateOnly(2026, 9, day);
-            await _service.CreateAsync(new Transaction($"Dia {day}", 10m, date, TransactionType.Expense, category.Id, _db.Ada));
+            await _service.CreateAsync(new Transaction($"Dia {day}", 10m, date, TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
         }
-        await _service.CreateAsync(new Transaction("Outubro", 10m, new DateOnly(2026, 10, 1), TransactionType.Expense, category.Id, _db.Ada));
+        await _service.CreateAsync(new Transaction("Outubro", 10m, new DateOnly(2026, 10, 1), TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
 
         var september = await _service.GetAsync(_db.Ada, Period.ThisMonth(Today));
 
@@ -158,8 +158,8 @@ public class TransactionServiceTests : IDisposable
     public async Task Get_Should_Treat_An_Open_End_As_Unbounded()
     {
         var category = await _db.AddCategoryAsync(_db.Ada);
-        await _service.CreateAsync(new Transaction("Antiga", 10m, new DateOnly(2020, 1, 1), TransactionType.Expense, category.Id, _db.Ada));
-        await _service.CreateAsync(new Transaction("Nova", 10m, Today, TransactionType.Expense, category.Id, _db.Ada));
+        await _service.CreateAsync(new Transaction("Antiga", 10m, new DateOnly(2020, 1, 1), TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
+        await _service.CreateAsync(new Transaction("Nova", 10m, Today, TransactionType.Expense, category.Id, _db.AccountFor(_db.Ada), _db.Ada));
 
         (await _service.GetAsync(_db.Ada, new Period(new DateOnly(2026, 1, 1), null))).Should().ContainSingle(t => t.Description == "Nova");
         (await _service.GetAsync(_db.Ada, new Period(null, new DateOnly(2025, 12, 31)))).Should().ContainSingle(t => t.Description == "Antiga");

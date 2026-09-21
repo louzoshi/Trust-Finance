@@ -15,8 +15,25 @@ public class TransactionMap : IEntityTypeConfiguration<Transaction>
         builder.Property(t => t.Date).IsRequired();
         builder.Property(t => t.Type).IsRequired();
 
+        builder.Property(t => t.ExternalId).HasMaxLength(255);
+
         // Every list and summary is "this user's transactions in this period".
         builder.HasIndex(t => new { t.UserId, t.Date });
+
+        // The bank's id is unique within one account: the same FITID imported twice is
+        // the same line, and the database is the one place that can guarantee it.
+        builder.HasIndex(t => new { t.UserId, t.AccountId, t.ExternalId })
+            .IsUnique()
+            .HasFilter("\"ExternalId\" IS NOT NULL");
+
+        builder.HasIndex(t => t.TransferId);
+
+        // An account with history cannot be dropped out from under it; the service
+        // refuses first, the database refuses last.
+        builder.HasOne(t => t.Account)
+            .WithMany(a => a.Transactions)
+            .HasForeignKey(t => t.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(t => t.Category)
             .WithMany(c => c.Transactions)

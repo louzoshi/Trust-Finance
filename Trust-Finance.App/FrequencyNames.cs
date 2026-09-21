@@ -12,4 +12,13 @@ public static class FrequencyNames
         Frequency.Yearly => "Anual",
         _ => "—"
     };
+
+    public static string Label(this AccountKind k) => k switch
+    {
+        AccountKind.Checking => "Conta corrente",
+        AccountKind.Savings => "Poupança",
+        AccountKind.Cash => "Dinheiro",
+        AccountKind.CreditCard => "Cartão de crédito",
+        _ => "—"
+    };
 }

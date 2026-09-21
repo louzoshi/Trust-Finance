@@ -351,6 +351,11 @@ a {
   margin: calc(var(--space-2) * -1) 0 0;
 }
 
+/* The negative margin above tucks a subtitle under a card's own title. Inside a
+   header's stacked block the title is right there, so it would overlap instead. */
+.card-header > div > .card-subtitle { margin-top: 0; }
+.card-header > div > .card-title { margin-bottom: var(--space-1); }
+
 .card-link {
   color: var(--series-1-strong);
   font-size: var(--text-sm);
@@ -712,6 +717,24 @@ a {
   gap: var(--space-2);
   color: var(--text-secondary);
 }
+
+/* Import preview: a line already on the ledger is context, not a choice. */
+.row-muted td { opacity: 0.55; }
+
+.paste-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.paste-input {
+  flex: 1 1 320px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+}
+
+.account-chips { margin-top: var(--space-2); }
 
 /* ------------------------------------------------------------------- forms */
 

@@ -8,9 +8,10 @@ public class PlanningTests
     private static readonly DateOnly Today = new(2026, 9, 20);
 
     private const int Someone = 1;
+    private const int Wallet = 9;
 
     private static Transaction Expense(int categoryId, decimal amount, string date = "2026-09-05") =>
-        new("Compra", amount, DateOnly.Parse(date), TransactionType.Expense, categoryId, Someone);
+        new("Compra", amount, DateOnly.Parse(date), TransactionType.Expense, categoryId, Wallet, Someone);
 
     private static Budget Limit(int categoryId, decimal limit) => new(categoryId, limit, Someone);
 
@@ -45,7 +46,7 @@ public class PlanningTests
         var transactions = new[]
         {
             Expense(1, 480m),
-            new Transaction("Salário", 2000m, Today, TransactionType.Income, 1, Someone)
+            new Transaction("Salário", 2000m, Today, TransactionType.Income, 1, Wallet, Someone)
         };
 
         global::TrustFinance.Domain.Planning.Planning.Budgets(budgets, Named(1, "Mercado"), transactions, Today).Single().Spent.Should().Be(480m);

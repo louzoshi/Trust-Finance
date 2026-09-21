@@ -4,7 +4,7 @@
 @attribute [ExcludeFromInteractiveRouting]
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
-@inject AccountService Accounts
+@inject UserAccountService Accounts
 @inject NavigationManager Navigation
 
 <PageTitle>Criar conta · Trust Finance</PageTitle>
@@ -71,7 +71,7 @@
 
         // Straight in after registering: asking someone to type the password they
         // chose two seconds ago is friction with no security to show for it.
-        var principal = AccountService.CreatePrincipal(user, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = UserAccountService.CreatePrincipal(user, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             principal,

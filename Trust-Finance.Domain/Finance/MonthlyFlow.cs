@@ -48,7 +48,10 @@ public static class MonthlyFlow
         // one number is what made an earlier dashboard report volume instead of a balance.
         var flow = months.ToDictionary(m => m, _ => (income: 0m, expense: 0m));
 
-        foreach (var t in transactions)
+        // Transfers move money between the user's own accounts; neither half is income
+        // or expense. Card purchases are spending on the day they happened, and the
+        // statement payment that follows is a transfer.
+        foreach (var t in transactions.Where(t => !t.IsTransfer))
         {
             var key = new DateOnly(t.Date.Year, t.Date.Month, 1);
             if (!flow.TryGetValue(key, out var f)) continue;
@@ -68,6 +71,7 @@ public static class MonthlyFlow
         // the grocery bill would put income at the top and say nothing about spending.
         var ranked = transactions
             .Where(t => t.Type == TransactionType.Expense
+                        && !t.IsTransfer
                         && t.Date.Year == currentKey.Year
                         && t.Date.Month == currentKey.Month)
             .GroupBy(t => categoryNames.TryGetValue(t.CategoryId, out var name) ? name : labels.Uncategorized)

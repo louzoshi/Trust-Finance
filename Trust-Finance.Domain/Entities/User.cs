@@ -39,6 +39,8 @@ public class User : Notifiable
     public bool IsPasswordless => string.IsNullOrEmpty(PasswordHash);
 
     public ICollection<Category> Categories { get; private set; } = new List<Category>();
+    public ICollection<Account> Accounts { get; private set; } = new List<Account>();
+    public ICollection<CategoryRule> CategoryRules { get; private set; } = new List<CategoryRule>();
     public ICollection<Transaction> Transactions { get; private set; } = new List<Transaction>();
     public ICollection<RecurringTransaction> Recurrences { get; private set; } = new List<RecurringTransaction>();
     public ICollection<Trade> Trades { get; private set; } = new List<Trade>();

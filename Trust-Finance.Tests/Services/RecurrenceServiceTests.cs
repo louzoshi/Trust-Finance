@@ -20,8 +20,8 @@ public class RecurrenceServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private static RecurringTransaction Salary(int categoryId, int userId, DateOnly start, DateOnly? end = null)
-        => new("Salário", 5000m, TransactionType.Income, categoryId, Frequency.Monthly, start, end, userId);
+    private RecurringTransaction Salary(int categoryId, int userId, DateOnly start, DateOnly? end = null)
+        => new("Salário", 5000m, TransactionType.Income, categoryId, _db.AccountFor(userId), Frequency.Monthly, start, end, userId);
 
     [Fact]
     public async Task Create_Should_Store_The_Recurrence_Without_Posting_Anything()
@@ -134,7 +134,7 @@ public class RecurrenceServiceTests : IDisposable
         await _service.PostDueAsync(_db.Ada);
 
         var corrected = new RecurringTransaction("Salário", 5500m, TransactionType.Income, category.Id,
-            Frequency.Monthly, new DateOnly(2026, 9, 5), null, _db.Ada);
+            _db.AdaAccount, Frequency.Monthly, new DateOnly(2026, 9, 5), null, _db.Ada);
         (await _service.UpdateAsync(created.Id, corrected)).Success.Should().BeTrue();
 
         _clock.Today = new DateOnly(2026, 10, 5);

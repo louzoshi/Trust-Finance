@@ -1,0 +1,203 @@
+@page "/contas"
+@inject AccountService Accounts
+@inject CurrentUser CurrentUser
+@inject TimeProvider Clock
+
+<PageTitle>Contas · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Contas</h1>
+        <p class="page-subtitle">Onde o dinheiro está — e, no cartão, quanto se deve</p>
+    </div>
+    <a href="importar" class="btn-soft">Importar extrato</a>
+</div>
+
+@if (_balances is not null)
+{
+    <div class="stat-row">
+        <StatTile Label="Em conta" Value="@Money.Format(_cash)" Sensitive Hint="somando contas e dinheiro" />
+        <StatTile Label="Em cartões" Value="@Money.Format(_owed)" Sensitive Hint="faturas em aberto"
+                  Tone="@(_owed > 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Neutral)" />
+        <StatTile Label="Saldo líquido" Value="@Money.Signed(_cash - _owed)" Sensitive Hint="o que sobra se pagar tudo hoje"
+                  Tone="@(_cash - _owed < 0 ? StatTile.StatTone.Expense : StatTile.StatTone.Income)" />
+    </div>
+}
+
+<section class="card">
+    <div class="card-header">
+        <h2 class="card-title">@(_editingId is null ? "Nova conta" : "Editar conta")</h2>
+    </div>
+    <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
+        <label>
+            Nome
+            <InputText @bind-Value="_form.Name" maxlength="40" placeholder="Itaú, Nubank, carteira…" />
+        </label>
+        <label>
+            Tipo
+            <InputSelect @bind-Value="_form.Kind">
+                @foreach (var k in Enum.GetValues<AccountKind>())
+                {
+                    <option value="@k">@k.Label()</option>
+                }
+            </InputSelect>
+        </label>
+        @if (_form.Kind == AccountKind.CreditCard)
+        {
+            <label>
+                Fecha no dia
+                <InputNumber @bind-Value="_form.ClosingDay" min="1" max="28" />
+            </label>
+            <label>
+                Vence no dia
+                <InputNumber @bind-Value="_form.DueDay" min="1" max="28" />
+            </label>
+        }
+        <div class="form-actions">
+            <button type="submit" class="btn-primary" disabled="@_saving">
+                @(_editingId is null ? "Adicionar" : "Salvar")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn-ghost" @onclick="CancelEdit">Cancelar</button>
+            }
+        </div>
+    </EditForm>
+    <ErrorList Messages="_formErrors" />
+    @if (_form.Kind == AccountKind.CreditCard)
+    {
+        <p class="field-hint">
+            Uma compra depois do fechamento entra na fatura do mês seguinte. Os dias vão até 28
+            para que todo mês tenha essa data.
+        </p>
+    }
+</section>
+
+<section class="card">
+    <ErrorList Messages="_listErrors" />
+    @if (_balances is null)
+    {
+        <p class="page-status">Carregando contas…</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Conta</th>
+                    <th>Tipo</th>
+                    <th>Fatura</th>
+                    <th class="num">Saldo</th>
+                    <th class="actions" aria-label="Ações"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in _balances)
+                {
+                    var card = b.Account.IsCreditCard;
+                    <tr>
+                        <td data-label="Conta"><strong>@b.Account.Name</strong></td>
+                        <td data-label="Tipo"><span class="badge badge-muted">@b.Account.Kind.Label()</span></td>
+                        <td data-label="Fatura">
+                            @if (card)
+                            {
+                                <span>fecha dia @b.Account.ClosingDay, vence dia @b.Account.DueDay</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                        <td data-label="Saldo" class="num sensitive @Money.Tone(card ? -Math.Abs(b.Balance) : b.Balance)">
+                            @(card ? Money.Format(Math.Abs(b.Balance)) : Money.Signed(b.Balance))
+                        </td>
+                        <td class="actions">
+                            @if (card)
+                            {
+                                <a class="btn-ghost" href="@($"contas/{b.Account.Id}")">Faturas</a>
+                            }
+                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(b.Account)">Editar</button>
+                            <ConfirmButton Message="@($"Excluir a conta {b.Account.Name}?")" OnConfirmed="() => DeleteAsync(b.Account)">
+                                Excluir
+                            </ConfirmButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</section>
+
+@code {
+    private int _userId;
+    private IReadOnlyList<AccountBalance>? _balances;
+    private decimal _cash;
+    private decimal _owed;
+    private AccountForm _form = new();
+    private int? _editingId;
+    private bool _saving;
+    private List<string> _formErrors = [];
+    private List<string> _listErrors = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _balances = await Accounts.BalancesAsync(_userId);
+        _cash = _balances.Where(b => !b.Account.IsCreditCard).Sum(b => b.Balance);
+
+        // A card's rows net to a negative when money is owed; shown as a positive debt.
+        _owed = -_balances.Where(b => b.Account.IsCreditCard).Sum(b => b.Balance);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _formErrors = [];
+
+        var result = _editingId is null
+            ? await Accounts.CreateAsync(_form.ToAccount(_userId))
+            : await Accounts.UpdateAsync(_editingId.Value, _form.ToAccount(_userId));
+
+        if (result.Failed)
+            _formErrors = result.Messages;
+        else
+        {
+            CancelEdit();
+            await LoadAsync();
+        }
+
+        _saving = false;
+    }
+
+    private void StartEdit(Account account)
+    {
+        _editingId = account.Id;
+        _form = AccountForm.From(account);
+        _formErrors = [];
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = new AccountForm();
+    }
+
+    private async Task DeleteAsync(Account account)
+    {
+        var result = await Accounts.DeleteAsync(account.Id, _userId);
+        _listErrors = result.Messages;
+
+        if (result.Success)
+        {
+            if (_editingId == account.Id) CancelEdit();
+            await LoadAsync();
+        }
+    }
+}

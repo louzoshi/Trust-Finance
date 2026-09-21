@@ -2,6 +2,7 @@
 @inject TransactionService Transactions
 @inject RecurrenceService Recurrences
 @inject CategoryService Categories
+@inject AccountService Accounts
 @inject CurrentUser CurrentUser
 @inject TimeProvider Clock
 
@@ -12,11 +13,35 @@
         <h1 class="page-title">Lançamentos</h1>
         <p class="page-subtitle">Receitas e despesas do seu caixa</p>
     </div>
-    <a href="recorrentes" class="btn-soft">Recorrentes</a>
+    <div class="form-actions">
+        <a href="importar" class="btn-soft">Importar extrato</a>
+        <a href="recorrentes" class="btn-soft">Recorrentes</a>
+    </div>
 </div>
 
 <section class="card">
-    <h2 class="card-title">@(_editingId is null ? "Novo lançamento" : "Editar lançamento")</h2>
+    <div class="card-header">
+        <h2 class="card-title">@(_editingId is null ? "Novo lançamento" : "Editar lançamento")</h2>
+        @if (_editingId is null)
+        {
+            <button type="button" class="btn-ghost" @onclick="() => _pasteOpen = !_pasteOpen">
+                @(_pasteOpen ? "Fechar" : "Colar boleto ou Pix")
+            </button>
+        }
+    </div>
+    @if (_pasteOpen && _editingId is null)
+    {
+        <div class="paste-row">
+            <input class="paste-input" placeholder="Linha digitável do boleto ou código Pix copia e cola"
+                   value="@_pasted" @oninput="e => _pasted = e.Value?.ToString() ?? string.Empty"
+                   @onkeydown="OnPasteKey" />
+            <button type="button" class="btn-soft" @onclick="ReadCode">Ler</button>
+        </div>
+        @if (_pasteMessage is not null)
+        {
+            <p class="field-hint @(_pasteOk ? "text-income" : "text-expense")">@_pasteMessage</p>
+        }
+    }
     <EditForm Model="_form" OnValidSubmit="SaveAsync" class="inline-form">
         <label>
             Descrição
@@ -32,11 +57,37 @@
         </label>
         <label>
             Tipo
-            <InputSelect @bind-Value="_form.Type">
-                <option value="@TransactionType.Expense">Despesa</option>
-                <option value="@TransactionType.Income">Receita</option>
+            <InputSelect @bind-Value="_form.Kind">
+                <option value="@EntryKind.Expense">Despesa</option>
+                <option value="@EntryKind.Income">Receita</option>
+                @if (_editingId is null)
+                {
+                    <option value="@EntryKind.Transfer">Transferência</option>
+                }
             </InputSelect>
         </label>
+        <label>
+            @(_form.Kind == EntryKind.Transfer ? "Da conta" : "Conta")
+            <InputSelect @bind-Value="_form.AccountId">
+                @foreach (var a in _accounts ?? [])
+                {
+                    <option value="@a.Id">@a.Name</option>
+                }
+            </InputSelect>
+        </label>
+        @if (_form.Kind == EntryKind.Transfer)
+        {
+            <label>
+                Para a conta
+                <InputSelect @bind-Value="_form.ToAccountId">
+                    <option value="0" disabled>Escolha…</option>
+                    @foreach (var a in (_accounts ?? []).Where(a => a.Id != _form.AccountId))
+                    {
+                        <option value="@a.Id">@a.Name</option>
+                    }
+                </InputSelect>
+            </label>
+        }
         <label>
             Categoria
             <InputSelect @bind-Value="_form.CategoryId">
@@ -47,6 +98,13 @@
                 }
             </InputSelect>
         </label>
+        @if (_editingId is null && _form.Kind != EntryKind.Transfer)
+        {
+            <label>
+                Parcelas
+                <InputNumber @bind-Value="_form.Installments" min="1" max="72" />
+            </label>
+        }
         <div class="form-actions">
             <button type="submit" class="btn-primary" disabled="@_saving">
                 @(_editingId is null ? "Adicionar" : "Salvar")
@@ -58,6 +116,14 @@
         </div>
     </EditForm>
     <ErrorList Messages="_formErrors" />
+    @if (_form.Kind == EntryKind.Transfer)
+    {
+        <p class="field-hint">Uma transferência não é receita nem despesa: o dinheiro só muda de conta. Pagar a fatura do cartão é uma transferência da conta para o cartão.</p>
+    }
+    else if (_form.Installments > 1 && _form.Amount is { } total)
+    {
+        <p class="field-hint">@_form.Installments parcelas de @Money.Format(Math.Floor(total / _form.Installments * 100m) / 100m), uma por mês a partir da data.</p>
+    }
     @if (_categories is { Count: 0 })
     {
         <p class="page-status">
@@ -85,6 +151,16 @@
             </div>
         }
     </div>
+    @if (_accounts is { Count: > 1 })
+    {
+        <div class="chip-row account-chips" role="group" aria-label="Conta">
+            <button type="button" class="chip @(_accountFilter is null ? "selected" : null)" @onclick="() => FilterAccountAsync(null)">Todas as contas</button>
+            @foreach (var a in _accounts)
+            {
+                <button type="button" class="chip @(_accountFilter == a.Id ? "selected" : null)" @onclick="() => FilterAccountAsync(a.Id)">@a.Name</button>
+            }
+        </div>
+    }
     @if (_preset == Preset.Custom)
     {
         <div class="inline-form period-range">
@@ -120,6 +196,7 @@
                     <th>Data</th>
                     <th>Descrição</th>
                     <th>Categoria</th>
+                    <th>Conta</th>
                     <th>Tipo</th>
                     <th class="num">Valor</th>
                     <th class="actions" aria-label="Ações"></th>
@@ -137,13 +214,30 @@
                             {
                                 <span class="badge badge-muted badge-tag" title="Lançado por uma recorrência">Recorrente</span>
                             }
+                            @if (t.ExternalId is not null)
+                            {
+                                <span class="badge badge-muted badge-tag" title="Conciliado com o extrato do banco">Extrato</span>
+                            }
                         </td>
                         <td data-label="Categoria">@(_categoryNames.GetValueOrDefault(t.CategoryId, "—"))</td>
-                        <td data-label="Tipo"><span class="badge @(income ? "badge-income" : "badge-expense")">@(income ? "Receita" : "Despesa")</span></td>
+                        <td data-label="Conta">@(_accountNames.GetValueOrDefault(t.AccountId, "—"))</td>
+                        <td data-label="Tipo">
+                            @if (t.IsTransfer)
+                            {
+                                <span class="badge badge-muted">@(income ? "Transf. recebida" : "Transf. enviada")</span>
+                            }
+                            else
+                            {
+                                <span class="badge @(income ? "badge-income" : "badge-expense")">@(income ? "Receita" : "Despesa")</span>
+                            }
+                        </td>
                         <td data-label="Valor" class="num sensitive @(income ? "text-income" : "text-expense")">@Money.Signed(t.Amount, t.Type)</td>
                         <td class="actions">
-                            <button type="button" class="btn-ghost" @onclick="() => StartEdit(t)">Editar</button>
-                            <ConfirmButton Message="@($"Excluir \"{t.Description}\"?")" OnConfirmed="() => DeleteAsync(t)">
+                            @if (!t.IsTransfer)
+                            {
+                                <button type="button" class="btn-ghost" @onclick="() => StartEdit(t)">Editar</button>
+                            }
+                            <ConfirmButton Message="@(t.IsTransfer ? "Excluir a transferência (os dois lados)?" : $"Excluir \"{t.Description}\"?")" OnConfirmed="() => DeleteAsync(t)">
                                 Excluir
                             </ConfirmButton>
                         </td>
@@ -159,8 +253,16 @@
     private int _userId;
     private List<Transaction>? _transactions;
     private List<Category>? _categories;
+    private List<Account>? _accounts;
     private Dictionary<int, string> _categoryNames = new();
+    private Dictionary<int, string> _accountNames = new();
+    private int? _accountFilter;
     private TransactionForm _form = new();
+
+    private bool _pasteOpen;
+    private string _pasted = string.Empty;
+    private string? _pasteMessage;
+    private bool _pasteOk;
     private int? _editingId;
     private bool _saving;
     private List<string> _formErrors = [];
@@ -179,7 +281,9 @@
     protected override async Task OnInitializedAsync()
     {
         _userId = await CurrentUser.IdAsync();
-        _form = TransactionForm.Empty(Today);
+        _accounts = await Accounts.GetAllAsync(_userId);
+        _accountNames = _accounts.ToDictionary(a => a.Id, a => a.Name);
+        _form = TransactionForm.Empty(Today, DefaultAccountId);
         _categories = await Categories.GetAllAsync(_userId);
         _categoryNames = _categories.ToDictionary(c => c.Id, c => c.Name);
 
@@ -188,12 +292,69 @@
         await LoadAsync();
     }
 
+    private int DefaultAccountId => _accounts?.FirstOrDefault(a => !a.IsCreditCard)?.Id ?? _accounts?.FirstOrDefault()?.Id ?? 0;
+
     private async Task LoadAsync()
     {
-        _transactions = await Transactions.GetAsync(_userId, CurrentPeriod);
-        _income = _transactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount);
-        _expense = _transactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount);
+        _transactions = await Transactions.GetAsync(_userId, CurrentPeriod, _accountFilter);
+
+        // Transfers are neither, so the strip reads as earned / spent / kept.
+        _income = _transactions.Where(t => t.Type == TransactionType.Income && !t.IsTransfer).Sum(t => t.Amount);
+        _expense = _transactions.Where(t => t.Type == TransactionType.Expense && !t.IsTransfer).Sum(t => t.Amount);
         _balance = _income - _expense;
+    }
+
+    private async Task FilterAccountAsync(int? accountId)
+    {
+        _accountFilter = accountId;
+        await LoadAsync();
+    }
+
+    // ------------------------------------------------------------ boleto / pix
+
+    private void OnPasteKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") ReadCode();
+    }
+
+    private void ReadCode()
+    {
+        _pasteMessage = null;
+
+        if (PixBrCode.TryParse(_pasted, out var pix, out var pixError))
+        {
+            _form.Kind = EntryKind.Expense;
+            _form.Amount = pix.Amount ?? _form.Amount;
+            _form.Date = Today;
+            _form.Description = string.IsNullOrWhiteSpace(pix.Description) ? $"Pix para {pix.MerchantName}" : $"Pix: {pix.Description}";
+            _pasteOk = true;
+            _pasteMessage = $"Pix para {pix.MerchantName} ({pix.MerchantCity})" +
+                            (pix.Amount is { } a ? $" de {Money.Format(a)}" : ", sem valor definido — informe o valor") +
+                            (pix.TransactionId is { } id ? $" · id {id}" : string.Empty);
+            return;
+        }
+
+        if (Boleto.TryParse(_pasted, Today, out var boleto, out var boletoError))
+        {
+            _form.Kind = EntryKind.Expense;
+            _form.Amount = boleto.Amount ?? _form.Amount;
+            _form.Date = boleto.DueDate ?? Today;
+            _form.Description = boleto.Kind == BoletoKind.Bank
+                ? $"Boleto {Banks.Name(boleto.BankCode)}"
+                : $"Boleto {boleto.Segment}";
+            _pasteOk = true;
+            _pasteMessage = (boleto.Kind == BoletoKind.Bank ? $"Boleto de cobrança · banco {Banks.Name(boleto.BankCode)}" : $"Boleto de arrecadação · {boleto.Segment}") +
+                            (boleto.Amount is { } v ? $" · {Money.Format(v)}" : " · sem valor no código") +
+                            (boleto.DueDate is { } d ? $" · vence {d:dd/MM/yyyy}" : string.Empty);
+            return;
+        }
+
+        // Whichever parser got further is the one whose complaint is useful.
+        _pasteOk = false;
+        var digits = _pasted.Count(char.IsDigit);
+        _pasteMessage = _pasted.TrimStart().StartsWith("0002", StringComparison.Ordinal) ? pixError
+            : digits >= 40 ? boletoError
+            : "Não reconheci: cole a linha digitável de um boleto (47 ou 48 dígitos) ou um código Pix copia e cola.";
     }
 
     // ---------------------------------------------------------------- period
@@ -253,9 +414,18 @@
         _saving = true;
         _formErrors = [];
 
-        var result = _editingId is null
-            ? await Transactions.CreateAsync(_form.ToTransaction(_userId))
-            : await Transactions.UpdateAsync(_editingId.Value, _form.ToTransaction(_userId));
+        Result result;
+        if (_editingId is not null)
+            result = await Transactions.UpdateAsync(_editingId.Value, _form.ToTransaction(_userId));
+        else if (_form.Kind == EntryKind.Transfer)
+        {
+            var (outgoing, incoming) = _form.ToTransfer(_userId);
+            result = await Transactions.CreateTransferAsync(outgoing, incoming);
+        }
+        else if (_form.Installments > 1)
+            result = await Transactions.CreateInstallmentsAsync(_form.ToInstallments(_userId));
+        else
+            result = await Transactions.CreateAsync(_form.ToTransaction(_userId));
 
         if (result.Failed)
             _formErrors = result.Messages;
@@ -282,7 +452,9 @@
     private void CancelEdit()
     {
         _editingId = null;
-        _form = TransactionForm.Empty(Today);
+        _form = TransactionForm.Empty(Today, DefaultAccountId);
+        _pasted = string.Empty;
+        _pasteMessage = null;
     }
 
     private async Task DeleteAsync(Transaction transaction)

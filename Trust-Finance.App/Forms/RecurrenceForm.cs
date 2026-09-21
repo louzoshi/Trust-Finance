@@ -9,11 +9,12 @@ public class RecurrenceForm
     public decimal? Amount { get; set; }
     public TransactionType Type { get; set; } = TransactionType.Expense;
     public int CategoryId { get; set; }
+    public int AccountId { get; set; }
     public Frequency Frequency { get; set; } = Frequency.Monthly;
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
 
-    public static RecurrenceForm Empty(DateOnly today) => new() { StartDate = today };
+    public static RecurrenceForm Empty(DateOnly today, int accountId) => new() { StartDate = today, AccountId = accountId };
 
     public static RecurrenceForm From(RecurringTransaction r) => new()
     {
@@ -21,6 +22,7 @@ public class RecurrenceForm
         Amount = r.Amount,
         Type = r.Type,
         CategoryId = r.CategoryId,
+        AccountId = r.AccountId,
         Frequency = r.Frequency,
         StartDate = r.StartDate,
         EndDate = r.EndDate
@@ -31,6 +33,7 @@ public class RecurrenceForm
         Amount ?? 0m,
         Type,
         CategoryId,
+        AccountId,
         Frequency,
         StartDate ?? default,
         EndDate,

@@ -9,6 +9,8 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<CategoryRule> CategoryRules => Set<CategoryRule>();
+    public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -28,6 +30,8 @@ public class TrustFinanceDbContext(DbContextOptions<TrustFinanceDbContext> optio
 
         modelBuilder.ApplyConfiguration(new UserMap());
         modelBuilder.ApplyConfiguration(new CategoryMap());
+        modelBuilder.ApplyConfiguration(new CategoryRuleMap());
+        modelBuilder.ApplyConfiguration(new AccountMap());
         modelBuilder.ApplyConfiguration(new TransactionMap());
         modelBuilder.ApplyConfiguration(new RecurringTransactionMap());
         modelBuilder.ApplyConfiguration(new TradeMap());

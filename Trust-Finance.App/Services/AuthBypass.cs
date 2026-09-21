@@ -69,7 +69,7 @@ public sealed class BypassAuthenticationHandler(
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var principal = AccountService.CreatePrincipal(
+        var principal = UserAccountService.CreatePrincipal(
             bypass.UserId, bypass.Name, AuthBypass.LocalEmail, AuthBypass.SchemeName);
 
         return Task.FromResult(

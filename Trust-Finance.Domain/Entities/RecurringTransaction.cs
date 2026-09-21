@@ -22,6 +22,7 @@ public class RecurringTransaction : Notifiable
         decimal amount,
         TransactionType type,
         int categoryId,
+        int accountId,
         Frequency frequency,
         DateOnly startDate,
         DateOnly? endDate,
@@ -36,6 +37,7 @@ public class RecurringTransaction : Notifiable
             "O valor precisa ser maior que zero — a direção é definida pelo tipo, não pelo sinal");
         AddNotificationIf(!Enum.IsDefined(type), nameof(Type), "Tipo inválido");
         AddNotificationIf(categoryId <= 0, nameof(CategoryId), "Escolha uma categoria");
+        AddNotificationIf(accountId <= 0, nameof(AccountId), "Escolha uma conta");
         AddNotificationIf(!Enum.IsDefined(frequency), nameof(Frequency), "Escolha a frequência");
         AddNotificationIf(startDate == default, nameof(StartDate), "Informe a primeira data");
         AddNotificationIf(endDate is not null && endDate < startDate, nameof(EndDate),
@@ -46,6 +48,7 @@ public class RecurringTransaction : Notifiable
         Amount = amount;
         Type = type;
         CategoryId = categoryId;
+        AccountId = accountId;
         Frequency = frequency;
         StartDate = startDate;
         EndDate = endDate;
@@ -70,6 +73,9 @@ public class RecurringTransaction : Notifiable
 
     public int CategoryId { get; private set; }
     public Category Category { get; private set; } = null!;
+
+    public int AccountId { get; private set; }
+    public Account Account { get; private set; } = null!;
 
     public int UserId { get; private set; }
     public User User { get; private set; } = null!;
@@ -115,6 +121,7 @@ public class RecurringTransaction : Notifiable
         Amount = corrected.Amount;
         Type = corrected.Type;
         CategoryId = corrected.CategoryId;
+        AccountId = corrected.AccountId;
         Frequency = corrected.Frequency;
         StartDate = corrected.StartDate;
         EndDate = corrected.EndDate;

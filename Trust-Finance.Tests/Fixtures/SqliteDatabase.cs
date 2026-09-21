@@ -21,6 +21,10 @@ public sealed class SqliteDatabase : IDbContextFactory<TrustFinanceDbContext>, I
     public int Ada { get; }
     public int Bob { get; }
 
+    /// <summary>Each user's checking account. Every transaction needs one, so the fixture opens them.</summary>
+    public int AdaAccount { get; }
+    public int BobAccount { get; }
+
     public SqliteDatabase()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
@@ -42,6 +46,26 @@ public sealed class SqliteDatabase : IDbContextFactory<TrustFinanceDbContext>, I
 
         Ada = ada.Id;
         Bob = bob.Id;
+
+        var adaChecking = new Account("Conta corrente", AccountKind.Checking, Ada);
+        var bobChecking = new Account("Conta corrente", AccountKind.Checking, Bob);
+        db.Accounts.AddRange(adaChecking, bobChecking);
+        db.SaveChanges();
+
+        AdaAccount = adaChecking.Id;
+        BobAccount = bobChecking.Id;
+    }
+
+    /// <summary>The checking account the fixture opened for <paramref name="userId"/>.</summary>
+    public int AccountFor(int userId) => userId == Ada ? AdaAccount : BobAccount;
+
+    public async Task<Account> AddCardAsync(int userId, string name = "Cartão", int closingDay = 10, int dueDay = 17)
+    {
+        await using var db = CreateDbContext();
+        var card = new Account(name, AccountKind.CreditCard, userId, closingDay, dueDay);
+        db.Accounts.Add(card);
+        await db.SaveChangesAsync();
+        return card;
     }
 
     public TrustFinanceDbContext CreateDbContext() => new(_options);
@@ -57,11 +81,11 @@ public sealed class SqliteDatabase : IDbContextFactory<TrustFinanceDbContext>, I
 
     public async Task<Transaction> AddTransactionAsync(
         int userId, int categoryId, decimal amount = 100m,
-        TransactionType type = TransactionType.Expense, DateOnly? date = null)
+        TransactionType type = TransactionType.Expense, DateOnly? date = null, int? accountId = null)
     {
         await using var db = CreateDbContext();
         var transaction = new Transaction(
-            "Compra", amount, date ?? new DateOnly(2026, 9, 10), type, categoryId, userId);
+            "Compra", amount, date ?? new DateOnly(2026, 9, 10), type, categoryId, accountId ?? AccountFor(userId), userId);
         db.Transactions.Add(transaction);
         await db.SaveChangesAsync();
         return transaction;

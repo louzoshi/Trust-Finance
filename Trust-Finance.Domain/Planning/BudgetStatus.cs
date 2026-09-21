@@ -41,8 +41,11 @@ public static class Planning
         IEnumerable<Transaction> transactions,
         DateOnly today)
     {
+        // Paying a card statement is a transfer, not spending; the purchases on the
+        // card were the spending, and they were counted on their own dates.
         var spentByCategory = transactions
             .Where(t => t.Type == TransactionType.Expense
+                        && !t.IsTransfer
                         && t.Date.Year == today.Year
                         && t.Date.Month == today.Month)
             .GroupBy(t => t.CategoryId)

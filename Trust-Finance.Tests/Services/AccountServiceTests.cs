@@ -1,4 +1,5 @@
 using TrustFinance.App.Services;
+using TrustFinance.Domain.Entities;
 using TrustFinance.Tests.Fixtures;
 
 namespace TrustFinance.Tests.Services;
@@ -6,97 +7,168 @@ namespace TrustFinance.Tests.Services;
 public class AccountServiceTests : IDisposable
 {
     private readonly SqliteDatabase _db = new();
-    private readonly AccountService _service;
+    private readonly FixedClock _clock = new(new DateOnly(2026, 9, 20));
+    private readonly AccountService _accounts;
+    private readonly TransactionService _transactions;
 
-    public AccountServiceTests() => _service = new AccountService(_db);
+    public AccountServiceTests()
+    {
+        _accounts = new AccountService(_db, _clock);
+        _transactions = new TransactionService(_db);
+    }
 
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Register_Should_Store_A_Hash_Not_The_Password()
+    public async Task A_User_With_No_Accounts_Should_Get_One_On_First_Use()
     {
-        var result = await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+        // The fixture opens one for Ada; a third user proves the on-demand path.
+        await using var db = _db.CreateDbContext();
+        var carla = new User("Carla", "carla@example.com", "hash");
+        db.Users.Add(carla);
+        await db.SaveChangesAsync();
 
-        result.Success.Should().BeTrue();
-        result.Value!.Id.Should().BePositive();
-        result.Value.PasswordHash.Should().NotBeNullOrEmpty().And.NotContain("segredo123");
+        var accounts = await _accounts.GetAllAsync(carla.Id);
+
+        accounts.Should().ContainSingle().Which.Kind.Should().Be(AccountKind.Checking);
+        (await _accounts.GetAllAsync(carla.Id)).Should().ContainSingle("the second call finds the first one, it does not open another");
     }
 
     [Fact]
-    public async Task Register_Should_Normalize_The_Email()
+    public async Task Two_Accounts_Cannot_Share_A_Name()
     {
-        var result = await _service.RegisterAsync("Carla", "  Carla@Example.COM ", "segredo123");
-
-        result.Value!.Email.Should().Be("carla@example.com");
-    }
-
-    [Fact]
-    public async Task Register_Should_Fail_When_Email_Already_Exists()
-    {
-        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
-
-        var result = await _service.RegisterAsync("Outra Carla", "CARLA@example.com", "outrasenha");
+        var result = await _accounts.CreateAsync(new Account("Conta corrente", AccountKind.Savings, _db.Ada));
 
         result.Failed.Should().BeTrue();
-        result.Messages.Should().ContainSingle().Which.Should().Contain("já está cadastrado");
-    }
-
-    [Theory]
-    [InlineData("nao-e-email", "segredo123", "Email")]
-    [InlineData("carla@example.com", "curta", "password")]
-    [InlineData("carla@example.com", "", "password")]
-    public async Task Register_Should_Reject_Bad_Input_With_A_Notification(string email, string password, string key)
-    {
-        var result = await _service.RegisterAsync("Carla", email, password);
-
-        result.Failed.Should().BeTrue();
-        result.Notifications.Should().Contain(n => n.Key == key);
+        result.Messages.Should().ContainSingle().Which.Should().Contain("Já existe");
     }
 
     [Fact]
-    public async Task Register_Should_Reject_A_Name_That_Is_Too_Short()
+    public async Task The_Same_Name_Is_Fine_For_Another_User()
     {
-        var result = await _service.RegisterAsync("Jo", "jo@example.com", "segredo123");
+        var result = await _accounts.CreateAsync(new Account("Conta corrente", AccountKind.Savings, _db.Bob));
 
-        result.Failed.Should().BeTrue();
-        result.Notifications.Should().Contain(n => n.Key == "Name");
+        result.Failed.Should().BeTrue("Bob already has one too");
+
+        (await _accounts.CreateAsync(new Account("Nubank", AccountKind.CreditCard, _db.Bob, 10, 17))).Success.Should().BeTrue();
+        (await _accounts.CreateAsync(new Account("Nubank", AccountKind.CreditCard, _db.Ada, 10, 17))).Success.Should().BeTrue();
     }
 
     [Fact]
-    public async Task ValidateCredentials_Should_Return_The_User_For_The_Right_Password()
+    public async Task An_Account_With_Transactions_Cannot_Be_Deleted()
     {
-        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        await _db.AddTransactionAsync(_db.Ada, category.Id);
 
-        var user = await _service.ValidateCredentialsAsync("carla@example.com", "segredo123");
+        var result = await _accounts.DeleteAsync(_db.AdaAccount, _db.Ada);
 
-        user.Should().NotBeNull();
-        user!.Name.Should().Be("Carla");
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("lançamentos");
     }
 
-    [Theory]
-    [InlineData("carla@example.com", "errada")]
-    [InlineData("ninguem@example.com", "segredo123")]
-    [InlineData("nao-e-email", "segredo123")]
-    public async Task ValidateCredentials_Should_Return_Null_For_Wrong_Email_Or_Password(string email, string password)
+    [Fact]
+    public async Task The_Last_Account_Cannot_Be_Deleted()
     {
-        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+        var result = await _accounts.DeleteAsync(_db.AdaAccount, _db.Ada);
 
-        (await _service.ValidateCredentialsAsync(email, password)).Should().BeNull();
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("pelo menos uma conta");
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("qualquer")]
-    public async Task ValidateCredentials_Should_Never_Accept_The_Passwordless_Local_Account(string password)
+    [Fact]
+    public async Task Delete_Should_Not_Reach_Another_Users_Account()
     {
-        // The account Auth:Bypass owns is written straight to the table with no hash.
-        // It has to stay unreachable from the login form, whatever is typed at it.
-        await using (var db = _db.CreateDbContext())
-        {
-            db.Users.Add(global::TrustFinance.Domain.Entities.User.Local("Local", AuthBypass.LocalEmail));
-            await db.SaveChangesAsync();
-        }
+        (await _accounts.DeleteAsync(_db.BobAccount, _db.Ada)).Failed.Should().BeTrue();
+        (await _accounts.GetByIdAsync(_db.BobAccount, _db.Bob)).Should().NotBeNull();
+    }
 
-        (await _service.ValidateCredentialsAsync(AuthBypass.LocalEmail, password)).Should().BeNull();
+    [Fact]
+    public async Task A_Card_With_History_Cannot_Become_A_Checking_Account()
+    {
+        var card = await _db.AddCardAsync(_db.Ada);
+        var category = await _db.AddCategoryAsync(_db.Ada);
+        await _db.AddTransactionAsync(_db.Ada, category.Id, accountId: card.Id);
+
+        var result = await _accounts.UpdateAsync(card.Id, new Account("Cartão", AccountKind.Checking, _db.Ada));
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("cartão");
+    }
+
+    [Fact]
+    public async Task Balances_Should_Read_Cash_As_Positive_And_A_Card_As_What_Is_Owed()
+    {
+        var card = await _db.AddCardAsync(_db.Ada);
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 5000m, TransactionType.Income);
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 200m, TransactionType.Expense);
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 350m, TransactionType.Expense, accountId: card.Id);
+
+        var balances = await _accounts.BalancesAsync(_db.Ada);
+
+        balances.Single(b => b.Account.Id == _db.AdaAccount).Balance.Should().Be(4800m);
+        balances.Single(b => b.Account.Id == card.Id).Balance.Should().Be(-350m, "a card balance is a debt");
+    }
+
+    [Fact]
+    public async Task A_Card_Statement_Should_Group_Purchases_And_Be_Settled_By_The_Payment()
+    {
+        var card = await _db.AddCardAsync(_db.Ada, closingDay: 10, dueDay: 17);
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        // Two purchases on August's statement, one after it closed.
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 100m, date: new DateOnly(2026, 8, 5), accountId: card.Id);
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 250m, date: new DateOnly(2026, 8, 10), accountId: card.Id);
+        await _db.AddTransactionAsync(_db.Ada, category.Id, 40m, date: new DateOnly(2026, 8, 11), accountId: card.Id);
+
+        // Paid on the due date, from checking.
+        var (outgoing, incoming) = Transaction.Transfer("Fatura", 350m, new DateOnly(2026, 8, 17), category.Id, _db.AdaAccount, card.Id, _db.Ada);
+        (await _transactions.CreateTransferAsync(outgoing, incoming)).Success.Should().BeTrue();
+
+        var statements = await _accounts.StatementsAsync(card.Id, _db.Ada);
+
+        var august = statements.Single(s => s.Closing == new DateOnly(2026, 8, 10));
+        august.Purchases.Should().Be(350m);
+        august.Payments.Should().Be(350m);
+        august.IsPaid.Should().BeTrue();
+
+        var september = statements.Single(s => s.Closing == new DateOnly(2026, 9, 10));
+        september.Purchases.Should().Be(40m, "the purchase after closing rolled into the next statement");
+        september.Balance.Should().Be(40m);
+        september.Due.Should().Be(new DateOnly(2026, 9, 17));
+    }
+
+    [Fact]
+    public async Task Statements_Should_Be_Empty_For_Something_That_Is_Not_A_Card()
+    {
+        (await _accounts.StatementsAsync(_db.AdaAccount, _db.Ada)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_Transfer_Should_Be_Deleted_On_Both_Sides()
+    {
+        var card = await _db.AddCardAsync(_db.Ada);
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        var (outgoing, incoming) = Transaction.Transfer("Fatura", 100m, new DateOnly(2026, 9, 5), category.Id, _db.AdaAccount, card.Id, _db.Ada);
+        await _transactions.CreateTransferAsync(outgoing, incoming);
+        (await _transactions.GetAllAsync(_db.Ada)).Should().HaveCount(2);
+
+        await _transactions.DeleteAsync(outgoing.Id, _db.Ada);
+
+        (await _transactions.GetAllAsync(_db.Ada)).Should().BeEmpty("deleting one half would leave money that arrived from nowhere");
+    }
+
+    [Fact]
+    public async Task A_Transaction_Should_Not_Reach_Another_Users_Account()
+    {
+        var category = await _db.AddCategoryAsync(_db.Ada);
+
+        var result = await _transactions.CreateAsync(
+            new Transaction("Compra", 10m, new DateOnly(2026, 9, 5), TransactionType.Expense, category.Id, _db.BobAccount, _db.Ada));
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("Conta não encontrada");
     }
 }
