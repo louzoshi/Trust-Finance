@@ -23,7 +23,7 @@ public static class AccountKinds
 /// belongs to one. A card carries the two days that define its statement cycle: the
 /// day the statement closes and the day it is due.
 /// </summary>
-public class Account : Notifiable
+public class Account : Notifiable, IAuditable
 {
     public const int MinNameLength = 2;
     public const int MaxNameLength = 40;

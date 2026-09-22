@@ -148,6 +148,7 @@
     private decimal _withheldThisYear;
     private PayoutForm _form = new();
     private int? _editingId;
+    private int _editingVersion;
     private bool _saving;
     private List<string> _formErrors = [];
     private List<string> _listErrors = [];
@@ -175,7 +176,7 @@
 
         var result = _editingId is null
             ? await Payouts.CreateAsync(_form.ToPayout(_userId))
-            : await Payouts.UpdateAsync(_editingId.Value, _form.ToPayout(_userId));
+            : await Payouts.UpdateAsync(_editingId.Value, _form.ToPayout(_userId), _editingVersion);
 
         if (result.Failed)
             _formErrors = result.Messages;
@@ -191,6 +192,7 @@
     private void StartEdit(Payout payout)
     {
         _editingId = payout.Id;
+        _editingVersion = payout.Version;
         _form = PayoutForm.From(payout);
         _formErrors = [];
     }

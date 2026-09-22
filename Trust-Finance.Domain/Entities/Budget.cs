@@ -3,7 +3,7 @@ using TrustFinance.Domain.Notifications;
 namespace TrustFinance.Domain.Entities;
 
 /// <summary>A monthly spending ceiling for one category.</summary>
-public class Budget : Notifiable
+public class Budget : Notifiable, IVersioned, IAuditable
 {
     private Budget() { }
 
@@ -19,6 +19,10 @@ public class Budget : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public decimal MonthlyLimit { get; private set; }
 
     public int CategoryId { get; private set; }

@@ -264,6 +264,7 @@
     private string? _pasteMessage;
     private bool _pasteOk;
     private int? _editingId;
+    private int _editingVersion;
     private bool _saving;
     private List<string> _formErrors = [];
     private List<string> _listErrors = [];
@@ -416,7 +417,7 @@
 
         Result result;
         if (_editingId is not null)
-            result = await Transactions.UpdateAsync(_editingId.Value, _form.ToTransaction(_userId));
+            result = await Transactions.UpdateAsync(_editingId.Value, _form.ToTransaction(_userId), _editingVersion);
         else if (_form.Kind == EntryKind.Transfer)
         {
             var (outgoing, incoming) = _form.ToTransfer(_userId);
@@ -445,6 +446,7 @@
     private void StartEdit(Transaction transaction)
     {
         _editingId = transaction.Id;
+        _editingVersion = transaction.Version;
         _form = TransactionForm.From(transaction);
         _formErrors = [];
     }

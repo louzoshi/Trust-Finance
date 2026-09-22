@@ -51,5 +51,10 @@ public class TransactionMap : IEntityTypeConfiguration<Transaction>
             .WithMany(r => r.Transactions)
             .HasForeignKey(t => t.RecurringTransactionId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // Optimistic concurrency: the version travels in the WHERE clause, so a write made
+        // against a row somebody else has already changed updates nothing and is reported
+        // instead of silently overwriting. See IVersioned.
+        builder.Property(t => t.Version).IsConcurrencyToken();
     }
 }

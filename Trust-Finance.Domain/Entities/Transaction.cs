@@ -6,7 +6,7 @@ namespace TrustFinance.Domain.Entities;
 /// One movement of cash. The amount is always positive and the direction lives in
 /// <see cref="Type"/>, so a sign error cannot quietly turn an expense into income.
 /// </summary>
-public class Transaction : Notifiable
+public class Transaction : Notifiable, IVersioned, IAuditable
 {
     public const int MinDescriptionLength = 2;
     public const int MaxDescriptionLength = 100;
@@ -96,6 +96,10 @@ public class Transaction : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Description { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public DateOnly Date { get; private set; }

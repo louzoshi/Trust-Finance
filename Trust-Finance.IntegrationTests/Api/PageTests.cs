@@ -24,6 +24,8 @@ public class PageTests(TrustFinanceApp app) : IClassFixture<TrustFinanceApp>
     [InlineData("/mercado")]
     [InlineData("/metas")]
     [InlineData("/configuracoes")]
+    [InlineData("/perfil")]
+    [InlineData("/auditoria")]
     public async Task Every_Page_Should_Render(string path)
     {
         var response = await app.CreatePlainClient().GetAsync(path);
@@ -43,6 +45,19 @@ public class PageTests(TrustFinanceApp app) : IClassFixture<TrustFinanceApp>
         var html = await app.CreatePlainClient().GetStringAsync("/");
 
         Html.Text(html).Should().Contain("Vamos começar");
+    }
+
+    [Fact]
+    public async Task The_Health_Check_Should_Answer_Without_A_Session()
+    {
+        // What a platform probe reads. It has no cookie and never will, so a health check
+        // behind the authorization filter would report every healthy machine as unhealthy.
+        await using var locked = new TrustFinanceApp { BypassAuth = false };
+
+        var response = await locked.CreatePlainClient().GetAsync("/health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("Healthy");
     }
 
     [Fact]

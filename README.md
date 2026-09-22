@@ -108,7 +108,9 @@ both demo flags off.
 ```
 Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
   Entities/              User, Account, Category, CategoryRule, Transaction,
-                         RecurringTransaction, Trade, Budget, alerts, settings
+                         RecurringTransaction, Trade, Budget, alerts, settings,
+                         AuditEntry; IVersioned and IAuditable, the two marks the
+                         database context acts on when it saves
   Banking/               OFX statements, boleto typed lines, Pix BR Code
   Markets/               Business-day calendar, 252 rate conventions, yield curve
                          (flat forward), fixed-income pricing, IR/IOF, FGC
@@ -120,19 +122,20 @@ Trust-Finance.Domain/    Entities and pure business logic — no EF, no ASP.NET
   Tax/                   CapitalGains: the monthly DARF computation
   Planning/              Budgets, goals and the notification rules
   Slug.cs                "Mercado & Padaria" -> "mercado-padaria"
-Trust-Finance.Data/      EF Core: DbContext, entity mappings, migrations
+Trust-Finance.Data/      EF Core: DbContext (which stamps versions and writes the
+                         audit trail on every save), entity mappings, migrations
 Trust-Finance.App/       The Blazor Server app
   Components/Pages/      Dashboard, transactions, accounts, card statements,
                          import, recurrences, categories, portfolio, fixed
-                         income, payouts, tax, market, goals, settings, login,
-                         register
+                         income, payouts, tax, market, goals, audit trail,
+                         account profile, settings, login, register
   Components/Shared/     Charts, stat tiles, notification tray, palette
   Components/Layout/     Signed-in shell and the bare auth layout
-  Services/              UserAccount, Account, Category, CategoryRule,
-                         Transaction, Recurrence, Import, Investment,
-                         FixedIncome, Payout, CorporateAction, Watchlist, Alert,
-                         Budget,
-                         Notification, Settings, UiState
+  Services/              UserAccount, SignInThrottle, Account, Category,
+                         CategoryRule, Transaction, Recurrence, Import,
+                         Investment, FixedIncome, Payout, CorporateAction,
+                         Watchlist, Alert, Budget, Audit, Notification,
+                         Settings, UiState, DatabaseHealthCheck
   Services/Market/       Provider abstraction, brapi.dev client, offline catalogue,
                          Banco Central series (CDI, SELIC, IPCA)
   Forms/                 Form models and their validation attributes
@@ -152,7 +155,21 @@ without a database.
 ## Features
 
 - **Authentication** — register and sign in against a cookie session. Every
-  page requires it; the login and register pages are the two exceptions.
+  page requires it; the login and register pages are the two exceptions. Five
+  wrong passwords lock an account for fifteen minutes, and twenty failures from
+  one address close the form to that address for the same fifteen — the first
+  stops a password being guessed, the second stops one attempt each against a
+  list of accounts, which never trips any single lockout.
+- **Minha conta** — change the display name, the email and the password. The
+  current password is asked for even with the session open, because a cookie
+  left on a borrowed machine would otherwise be enough to take the account over;
+  and since a cookie can only be rewritten on a real HTTP response, the screen
+  says so and offers the way out rather than leaving a stale session behind.
+- **Auditoria** — every row created, corrected or deleted, with the fields that
+  moved and what they moved from and to. Written by the database context on save
+  rather than by each service, so a write that nobody remembered to instrument is
+  still on the trail; a deleted row leaves its line behind, which is the case the
+  trail exists for.
 - **Categories** — full CRUD, owned by the user who created them. Slugs are
   unique per user, so two people can each have a `mercado` category.
 - **Accounts** — checking, savings, cash and credit cards. Every transaction
@@ -237,6 +254,11 @@ showing](docs/images/lancamentos.png)
   category, portfolio summary, budget progress and recent activity.
 - **Settings** — density, accent colour, start page, privacy mode, market-data
   token and refresh interval, and per-source notification switches.
+- **Two windows, one row** — every money-bearing row carries a version. A
+  correction made against the version the form was opened on is applied; one made
+  against an older one is refused with a message, rather than quietly erasing what
+  the other window saved. The same version travels in the WHERE clause as EF's
+  concurrency token, which closes the gap between the check and the write.
 - **Light and dark theme** — chosen per browser, applied before the first paint
   so there is no flash of the wrong one, and followed by the charts.
 - **Responsive** — the sidebar becomes a drawer and tables become cards on a
@@ -286,6 +308,27 @@ override the connection string:
 ```bash
 ConnectionStrings__Default="Data Source=/tmp/scratch.db" dotnet run --project Trust-Finance.App
 ```
+
+### Keys, health and what sits in front
+
+Beside the database file the app keeps a `keys/` folder: the data-protection key ring that
+encrypts the authentication cookie and every antiforgery token. Left in its default place it
+lands in a folder a container throws away on each deploy, which signs everyone out and breaks
+every form that was open — so whatever preserves the database preserves the keys. Mount the
+volume and both are covered.
+
+`/health` opens the database and reads a row, then answers `Healthy` with no session
+required. It is what a platform probe should point at: a machine whose migrations failed
+answers `Unhealthy` and never receives traffic. `fly.toml` already wires it.
+
+Behind a reverse proxy — Fly, nginx, an ingress — set `Hosting__BehindProxy=true`. Without
+it every request reads as plain HTTP on a site served over HTTPS, and every visitor reads as
+the proxy, which would make the sign-in throttle treat the whole internet as one host. It is
+off by default on purpose: trusting those headers from a client that reaches the app
+directly would let anyone claim any address.
+
+Outside Development the authentication cookie is marked `Secure`, `HttpOnly` and
+`SameSite=Lax`, and responses carry HSTS.
 
 ### Installing it for real use
 
@@ -386,11 +429,24 @@ What it checks, beyond the happy paths:
   CDB at 12% after tax, and Tesouro Selic pays no custody on its first R$ 10.000
 - Splitting R$ 500.000 across two banks is fully covered by the FGC and leaving
   it at one is not; treasury paper is left out rather than counted as uncovered
+- Five wrong passwords lock the account, the right one on the sixth attempt is
+  refused anyway, the lockout ends by itself, and one success forgets the
+  failures before it; twenty failures from one address close the form to that
+  address alone, and a request with no address is never blocked
+- Changing the password needs the current one, refuses a repeat of it, and clears
+  a lockout; moving the email onto another account's is refused, and a rejected
+  profile edit leaves the row exactly as it was
+- Two windows on one transaction: the second correction is refused rather than
+  applied, the first survives, and reloading lets the second through
+- The trail records a creation, the fields a correction moved (and not the ones
+  it did not, nor the version), nothing at all when a correction changed nothing,
+  and a deletion — whose line outlives the row it describes; one user never sees
+  another's
 
 **Integration** (`Trust-Finance.IntegrationTests`) boots the whole app in-process
-and talks to it over HTTP: every page renders, an anonymous request is sent to
-the login, registering sets the cookie and lands on the dashboard, a form post
-without its antiforgery token is rejected, and the brapi.dev client survives a
+and talks to it over HTTP: every page renders, `/health` answers without a session,
+an anonymous request is sent to the login, registering sets the cookie and lands on
+the dashboard, a form post without its antiforgery token is rejected, and the brapi.dev client survives a
 rate limit, a bad status and malformed JSON without throwing. A few tests call
 brapi.dev for real, to notice when the response shape changes; they are tagged
 so a run without internet can skip them:
@@ -428,7 +484,6 @@ handful of real people use, not a business-management system.
 - Portfolio value over time from price history, for a time-weighted return
   next to the money-weighted one
 - National holidays in the DARF due date
-- Editing an account: display name, email, password
 - Exporting to CSV, and a backup of the database file that does not involve
   finding it on disk
 

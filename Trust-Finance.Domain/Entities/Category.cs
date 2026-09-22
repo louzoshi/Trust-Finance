@@ -7,7 +7,7 @@ namespace TrustFinance.Domain.Entities;
 /// "Mercado" and "mercado " collide for the same user, and a caller free to set it could
 /// defeat that just by passing something else.
 /// </summary>
-public class Category : Notifiable
+public class Category : Notifiable, IAuditable
 {
     public const int MinNameLength = 2;
     public const int MaxNameLength = 40;

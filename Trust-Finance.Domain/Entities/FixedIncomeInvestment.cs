@@ -67,7 +67,7 @@ public static class FixedIncomeKinds
 /// Its worth today is a calculation, not a quote, which is why it needs its own entity
 /// rather than another <see cref="Trade"/> with an odd asset class.
 /// </summary>
-public class FixedIncomeInvestment : Notifiable
+public class FixedIncomeInvestment : Notifiable, IVersioned, IAuditable
 {
     public const int MinIssuerLength = 2;
     public const int MaxIssuerLength = 60;
@@ -121,6 +121,10 @@ public class FixedIncomeInvestment : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Issuer { get; private set; } = string.Empty;
     public FixedIncomeKind Kind { get; private set; }
     public IndexKind Index { get; private set; }

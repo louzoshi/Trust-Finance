@@ -22,5 +22,10 @@ public class CorporateActionMap : IEntityTypeConfiguration<CorporateAction>
             .WithMany(u => u.CorporateActions)
             .HasForeignKey(a => a.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Optimistic concurrency: the version travels in the WHERE clause, so a write made
+        // against a row somebody else has already changed updates nothing and is reported
+        // instead of silently overwriting. See IVersioned.
+        builder.Property(a => a.Version).IsConcurrencyToken();
     }
 }

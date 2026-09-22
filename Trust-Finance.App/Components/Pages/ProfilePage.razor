@@ -1,0 +1,182 @@
+@page "/perfil"
+@inject UserAccountService Accounts
+@inject CurrentUser CurrentUser
+@inject AuthBypass Bypass
+
+<PageTitle>Minha conta · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Minha conta</h1>
+        <p class="page-subtitle">Seus dados de acesso</p>
+    </div>
+</div>
+
+@if (Bypass.Enabled)
+{
+    <section class="card">
+        <p class="page-status">
+            Esta instalação está com <span class="mono">Auth:Bypass</span> ligado: a sessão usa uma conta
+            local sem senha, e não há nada para alterar aqui.
+        </p>
+    </section>
+}
+else if (_loading)
+{
+    <p class="page-status">Carregando…</p>
+}
+else
+{
+    <section class="card">
+        <h2 class="card-title">Dados da conta</h2>
+        <p class="card-subtitle">O e-mail é o que identifica você no login</p>
+
+        <EditForm Model="_profile" OnValidSubmit="SaveProfileAsync" class="form-grid">
+            <DataAnnotationsValidator />
+
+            <label>
+                Nome
+                <InputText @bind-Value="_profile.Name" maxlength="40" autocomplete="name" />
+            </label>
+
+            <label>
+                E-mail
+                <InputText @bind-Value="_profile.Email" type="email" maxlength="100" autocomplete="email" />
+            </label>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary" disabled="@_savingProfile">Salvar</button>
+                @if (_profileSaved)
+                {
+                    <span class="badge badge-income">Salvo</span>
+                }
+            </div>
+
+            <ValidationSummary class="error-list" />
+        </EditForm>
+
+        <ErrorList Messages="_profileErrors" />
+    </section>
+
+    <section class="card">
+        <h2 class="card-title">Senha</h2>
+        <p class="card-subtitle">A senha atual é pedida mesmo com a sessão aberta</p>
+
+        <EditForm Model="_password" OnValidSubmit="ChangePasswordAsync" class="form-grid">
+            <DataAnnotationsValidator />
+
+            <label>
+                Senha atual
+                <InputText @bind-Value="_password.CurrentPassword" type="password" autocomplete="current-password" />
+            </label>
+
+            <label>
+                Nova senha
+                <InputText @bind-Value="_password.NewPassword" type="password" autocomplete="new-password" />
+            </label>
+
+            <label>
+                Repita a nova senha
+                <InputText @bind-Value="_password.Confirmation" type="password" autocomplete="new-password" />
+            </label>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary" disabled="@_savingPassword">Alterar senha</button>
+            </div>
+
+            <ValidationSummary class="error-list" />
+        </EditForm>
+
+        <ErrorList Messages="_passwordErrors" />
+    </section>
+
+    @if (_signOutNeeded is not null)
+    {
+        <section class="card">
+            <h2 class="card-title">Entre de novo</h2>
+            <p class="card-subtitle">@_signOutNeeded</p>
+
+            @* The session was issued before this change and still carries the old data. A
+               cookie can only be rewritten on a real HTTP response, never from inside an
+               interactive circuit, so the way out is the same sign-out endpoint the shell
+               uses. *@
+            <form method="post" action="sair">
+                <AntiforgeryToken />
+                <button type="submit" class="btn-primary">Sair e entrar de novo</button>
+            </form>
+        </section>
+    }
+}
+
+@code {
+    private int _userId;
+    private bool _loading = true;
+
+    private ProfileForm _profile = new();
+    private PasswordForm _password = new();
+
+    private bool _savingProfile;
+    private bool _savingPassword;
+    private bool _profileSaved;
+
+    private List<string> _profileErrors = [];
+    private List<string> _passwordErrors = [];
+    private string? _signOutNeeded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Bypass.Enabled)
+        {
+            _loading = false;
+            return;
+        }
+
+        _userId = await CurrentUser.IdAsync();
+
+        if (await Accounts.GetByIdAsync(_userId) is { } user)
+            _profile = new ProfileForm { Name = user.Name, Email = user.Email };
+
+        _loading = false;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        _savingProfile = true;
+        _profileErrors = [];
+        _profileSaved = false;
+
+        var before = _profile.Email;
+        var result = await Accounts.UpdateProfileAsync(_userId, _profile.Name, _profile.Email);
+
+        if (result.Failed)
+            _profileErrors = result.Messages;
+        else
+        {
+            _profileSaved = true;
+            _profile = new ProfileForm { Name = result.Value!.Name, Email = result.Value.Email };
+
+            if (!string.Equals(before, result.Value.Email, StringComparison.OrdinalIgnoreCase))
+                _signOutNeeded = "O e-mail mudou. A sessão aberta ainda usa o anterior.";
+        }
+
+        _savingProfile = false;
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _savingPassword = true;
+        _passwordErrors = [];
+
+        var result = await Accounts.ChangePasswordAsync(_userId, _password.CurrentPassword, _password.NewPassword);
+
+        if (result.Failed)
+            _passwordErrors = result.Messages;
+        else
+        {
+            _password = new PasswordForm();
+            _signOutNeeded = "A senha foi alterada. Entre de novo com ela.";
+        }
+
+        _savingPassword = false;
+    }
+}

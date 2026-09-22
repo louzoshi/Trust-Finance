@@ -43,7 +43,7 @@ public class PayoutAndActionServiceTests : IDisposable
     {
         var created = (await _payouts.CreateAsync(Dividend(_db.Ada))).Value!;
 
-        (await _payouts.UpdateAsync(created.Id, Dividend(_db.Bob, 999m))).Failed.Should().BeTrue();
+        (await _payouts.UpdateAsync(created.Id, Dividend(_db.Bob, 999m), created.Version)).Failed.Should().BeTrue();
         (await _payouts.DeleteAsync(created.Id, _db.Bob)).Failed.Should().BeTrue();
 
         (await _payouts.GetAllAsync(_db.Ada)).Single().GrossAmount.Should().Be(100m);
@@ -75,7 +75,7 @@ public class PayoutAndActionServiceTests : IDisposable
     {
         var created = (await _actions.CreateAsync(Split(_db.Ada))).Value!;
 
-        (await _actions.UpdateAsync(created.Id, Split(_db.Bob))).Failed.Should().BeTrue();
+        (await _actions.UpdateAsync(created.Id, Split(_db.Bob), created.Version)).Failed.Should().BeTrue();
         (await _actions.DeleteAsync(created.Id, _db.Bob)).Failed.Should().BeTrue();
         (await _actions.GetAllAsync(_db.Ada)).Should().ContainSingle();
 

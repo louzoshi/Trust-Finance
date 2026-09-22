@@ -104,7 +104,7 @@ public class FixedIncomeService(
         return Result<FixedIncomeInvestment>.Ok(paper);
     }
 
-    public async Task<Result> UpdateAsync(int id, FixedIncomeInvestment corrected)
+    public async Task<Result> UpdateAsync(int id, FixedIncomeInvestment corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -115,11 +115,25 @@ public class FixedIncomeService(
         if (paper is null)
             return Result.Fail(nameof(FixedIncomeInvestment), "Aplicação não encontrada");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (paper.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         paper.CorrectTo(corrected);
         if (paper.IsInvalid)
             return Result.Fail(paper);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

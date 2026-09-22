@@ -412,6 +412,7 @@ else
 
     private TradeForm _form = new();
     private int? _editingId;
+    private int _editingVersion;
     private bool _formOpen;
     private bool _saving;
     private bool _loading;
@@ -424,6 +425,7 @@ else
     private List<CorporateAction> _actions = [];
     private CorporateActionForm _actionForm = new();
     private int? _editingActionId;
+    private int _editingActionVersion;
     private bool _actionFormOpen;
     private List<string> _actionErrors = [];
 
@@ -457,7 +459,7 @@ else
 
         var result = _editingActionId is null
             ? await Actions.CreateAsync(_actionForm.ToAction(_userId))
-            : await Actions.UpdateAsync(_editingActionId.Value, _actionForm.ToAction(_userId));
+            : await Actions.UpdateAsync(_editingActionId.Value, _actionForm.ToAction(_userId), _editingActionVersion);
 
         if (result.Failed)
             _actionErrors = result.Messages;
@@ -473,6 +475,7 @@ else
     private void StartActionEdit(CorporateAction action)
     {
         _editingActionId = action.Id;
+        _editingActionVersion = action.Version;
         _actionForm = CorporateActionForm.From(action);
         _actionFormOpen = true;
         _actionErrors = [];
@@ -516,6 +519,7 @@ else
     private void StartEdit(Trade trade)
     {
         _editingId = trade.Id;
+        _editingVersion = trade.Version;
         _form = TradeForm.From(trade);
         _formErrors = [];
         _formOpen = true;
@@ -535,7 +539,7 @@ else
 
         var result = _editingId is null
             ? await Investments.AddTradeAsync(_form.ToTrade(_userId))
-            : await Investments.UpdateTradeAsync(_editingId.Value, _form.ToTrade(_userId));
+            : await Investments.UpdateTradeAsync(_editingId.Value, _form.ToTrade(_userId), _editingVersion);
 
         if (result.Failed)
             _formErrors = result.Messages;

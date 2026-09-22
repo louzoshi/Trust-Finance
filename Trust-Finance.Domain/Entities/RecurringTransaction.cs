@@ -13,7 +13,7 @@ namespace TrustFinance.Domain.Entities;
 /// skipped, and it keeps standing when the recurrence is later removed. The recurrence
 /// only ever decides the future.
 /// </summary>
-public class RecurringTransaction : Notifiable
+public class RecurringTransaction : Notifiable, IVersioned, IAuditable
 {
     private RecurringTransaction() { }
 
@@ -57,6 +57,10 @@ public class RecurringTransaction : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Description { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public TransactionType Type { get; private set; }

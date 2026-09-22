@@ -73,7 +73,7 @@ public class RecurrenceService(IDbContextFactory<TrustFinanceDbContext> factory,
         return Result<RecurringTransaction>.Ok(recurrence);
     }
 
-    public async Task<Result> UpdateAsync(int id, RecurringTransaction corrected)
+    public async Task<Result> UpdateAsync(int id, RecurringTransaction corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -89,11 +89,25 @@ public class RecurrenceService(IDbContextFactory<TrustFinanceDbContext> factory,
         if (!await db.Accounts.AnyAsync(a => a.Id == corrected.AccountId && a.UserId == corrected.UserId))
             return Result.Fail(nameof(RecurringTransaction.AccountId), "Conta não encontrada");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (recurrence.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         recurrence.CorrectTo(corrected);
         if (recurrence.IsInvalid)
             return Result.Fail(recurrence);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

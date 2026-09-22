@@ -29,7 +29,7 @@ public class CorporateActionService(IDbContextFactory<TrustFinanceDbContext> fac
         return Result<CorporateAction>.Ok(action);
     }
 
-    public async Task<Result> UpdateAsync(int id, CorporateAction corrected)
+    public async Task<Result> UpdateAsync(int id, CorporateAction corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -40,11 +40,25 @@ public class CorporateActionService(IDbContextFactory<TrustFinanceDbContext> fac
         if (action is null)
             return Result.Fail(nameof(CorporateAction), "Evento não encontrado");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (action.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         action.CorrectTo(corrected);
         if (action.IsInvalid)
             return Result.Fail(action);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

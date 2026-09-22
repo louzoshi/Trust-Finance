@@ -110,7 +110,7 @@ public class TransactionService(IDbContextFactory<TrustFinanceDbContext> factory
         return Result.Ok();
     }
 
-    public async Task<Result> UpdateAsync(int id, Transaction corrected)
+    public async Task<Result> UpdateAsync(int id, Transaction corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -126,11 +126,25 @@ public class TransactionService(IDbContextFactory<TrustFinanceDbContext> factory
         if (!await AccountIsReachableAsync(db, corrected.AccountId, corrected.UserId))
             return Result.Fail(nameof(Transaction.AccountId), "Conta não encontrada");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (transaction.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         transaction.CorrectTo(corrected);
         if (transaction.IsInvalid)
             return Result.Fail(transaction);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

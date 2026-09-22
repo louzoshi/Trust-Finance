@@ -29,7 +29,7 @@ public class PayoutService(IDbContextFactory<TrustFinanceDbContext> factory)
         return Result<Payout>.Ok(payout);
     }
 
-    public async Task<Result> UpdateAsync(int id, Payout corrected)
+    public async Task<Result> UpdateAsync(int id, Payout corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -40,11 +40,25 @@ public class PayoutService(IDbContextFactory<TrustFinanceDbContext> factory)
         if (payout is null)
             return Result.Fail(nameof(Payout), "Provento não encontrado");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (payout.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         payout.CorrectTo(corrected);
         if (payout.IsInvalid)
             return Result.Fail(payout);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

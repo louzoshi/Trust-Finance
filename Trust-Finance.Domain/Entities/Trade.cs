@@ -17,7 +17,7 @@ public enum TradeSide
 /// A Trade cannot exist in a state the portfolio maths would choke on. Every way in runs
 /// the same rules, and an invalid one carries its notifications instead of throwing.
 /// </summary>
-public class Trade : Notifiable
+public class Trade : Notifiable, IVersioned, IAuditable
 {
     public const int MaxNoteLength = 200;
 
@@ -60,6 +60,10 @@ public class Trade : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Ticker { get; private set; } = string.Empty;
     public AssetClass Class { get; private set; }
     public TradeSide Side { get; private set; }

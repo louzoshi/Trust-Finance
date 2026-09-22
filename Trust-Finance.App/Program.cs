@@ -2,6 +2,9 @@ using ApexCharts;
 using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TrustFinance.App.Components;
 using TrustFinance.App.Services;
@@ -27,6 +30,24 @@ var databasePath = builder.Configuration.GetConnectionString("Default")
 builder.Services.AddDbContextFactory<TrustFinanceDbContext>(options =>
     options.UseSqlite(databasePath));
 
+// Antiforgery tokens and the authentication cookie are both encrypted with the data
+// protection key ring. Left to itself it lands in a folder that a container throws away on
+// every deploy, which signs everyone out and breaks every form that was open at the time —
+// so it is kept beside the database, where whatever preserves the data preserves the keys.
+// The application name pins the purpose string: two installs sharing a folder stay apart.
+// On Linux the ring is stored unencrypted — there is no DPAPI to wrap it with — so the
+// startup warning about it is expected, and the folder's permissions are what protect it.
+var keyRing = Path.Combine(
+    Path.GetDirectoryName(new SqliteConnectionStringBuilder(databasePath).DataSource) is { Length: > 0 } directory
+        ? directory
+        : DatabaseLocation.DefaultDirectory(),
+    "keys");
+Directory.CreateDirectory(keyRing);
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyRing))
+    .SetApplicationName("TrustFinance");
+
 builder.Services.AddScoped<UserAccountService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<TransactionService>();
@@ -38,6 +59,7 @@ builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ThemeState>();
 builder.Services.AddScoped<UiState>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<SignInThrottle>();
 
 // Investing, planning and the notification tray.
 builder.Services.AddScoped<SettingsService>();
@@ -50,6 +72,7 @@ builder.Services.AddScoped<WatchlistService>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<BudgetService>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<MarketData>();
 builder.Services.AddMemoryCache();
 
@@ -84,6 +107,14 @@ var authentication = builder.Services
         options.LoginPath = "/login";
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
+
+        // Script must not be able to read the session, a cross-site form post must not be
+        // able to ride it, and outside development it must never travel in clear text.
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
     });
 
 if (bypass.Enabled)
@@ -91,6 +122,11 @@ if (bypass.Enabled)
 
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
+
+// What a platform health check reads to decide the process is serving, and what a deploy
+// waits for before it sends traffic to a new machine.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database");
 
 builder.Services.AddApexCharts();
 builder.Services.AddRazorComponents()
@@ -125,15 +161,33 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Behind Fly, a reverse proxy or an ingress, every request arrives from the proxy: without
+// this the scheme reads as http on a site served over https and every client address reads
+// as the proxy's, which would make the sign-in throttle count the whole internet as one
+// host. Off by default, because trusting these headers from a client that reaches the app
+// directly would let anyone claim any address.
+if (builder.Configuration.GetValue<bool>("Hosting:BehindProxy"))
+{
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    });
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/erro", createScopeForErrors: true);
+    app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/nao-encontrado", createScopeForStatusCodePages: true);
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
+
+// Anonymous and outside the component pipeline: a health check that needs a session tells
+// the platform nothing about whether the app is serving.
+app.MapHealthChecks("/health").AllowAnonymous();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

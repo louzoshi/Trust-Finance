@@ -30,7 +30,7 @@ public static class PayoutKinds
 /// separately: dividends and FII income go under exempt income, JCP under income
 /// taxed exclusively at source, each at the gross figure with the tax shown alongside.
 /// </summary>
-public class Payout : Notifiable
+public class Payout : Notifiable, IVersioned, IAuditable
 {
     public const int MaxNoteLength = 200;
 
@@ -72,6 +72,10 @@ public class Payout : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Ticker { get; private set; } = string.Empty;
     public PayoutKind Kind { get; private set; }
     public DateOnly PaymentDate { get; private set; }

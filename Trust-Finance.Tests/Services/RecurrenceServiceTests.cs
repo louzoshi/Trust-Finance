@@ -135,7 +135,10 @@ public class RecurrenceServiceTests : IDisposable
 
         var corrected = new RecurringTransaction("Salário", 5500m, TransactionType.Income, category.Id,
             _db.AdaAccount, Frequency.Monthly, new DateOnly(2026, 9, 5), null, _db.Ada);
-        (await _service.UpdateAsync(created.Id, corrected)).Success.Should().BeTrue();
+        // Posting the September occurrence above already wrote the recurrence, so the
+        // correction is made against the version that write left behind.
+        var current = (await _service.GetByIdAsync(created.Id, _db.Ada))!;
+        (await _service.UpdateAsync(created.Id, corrected, current.Version)).Success.Should().BeTrue();
 
         _clock.Today = new DateOnly(2026, 10, 5);
         await _service.PostDueAsync(_db.Ada);

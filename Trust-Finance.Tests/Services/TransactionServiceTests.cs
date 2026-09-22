@@ -96,7 +96,7 @@ public class TransactionServiceTests : IDisposable
         var created = (await _service.CreateAsync(Tx(category.Id, _db.Ada))).Value!;
 
         var result = await _service.UpdateAsync(
-            created.Id, Tx(category.Id, _db.Ada, 100m, TransactionType.Income));
+            created.Id, Tx(category.Id, _db.Ada, 100m, TransactionType.Income), created.Version);
 
         result.Success.Should().BeTrue();
         (await _service.GetByIdAsync(created.Id, _db.Ada))!.Type.Should().Be(TransactionType.Income);
@@ -109,7 +109,7 @@ public class TransactionServiceTests : IDisposable
         var bobs = await _db.AddCategoryAsync(_db.Bob);
         var created = (await _service.CreateAsync(Tx(category.Id, _db.Ada))).Value!;
 
-        var result = await _service.UpdateAsync(created.Id, Tx(bobs.Id, _db.Bob, 999m));
+        var result = await _service.UpdateAsync(created.Id, Tx(bobs.Id, _db.Bob, 999m), created.Version);
 
         result.Failed.Should().BeTrue();
         (await _service.GetByIdAsync(created.Id, _db.Ada))!.Amount.Should().Be(100m);

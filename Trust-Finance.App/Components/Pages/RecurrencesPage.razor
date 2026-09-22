@@ -164,6 +164,7 @@
     private Dictionary<int, string> _categoryNames = new();
     private RecurrenceForm _form = new();
     private int? _editingId;
+    private int _editingVersion;
     private bool _saving;
     private int _posted;
     private List<string> _formErrors = [];
@@ -198,7 +199,7 @@
 
         var result = _editingId is null
             ? await Recurrences.CreateAsync(_form.ToRecurrence(_userId))
-            : await Recurrences.UpdateAsync(_editingId.Value, _form.ToRecurrence(_userId));
+            : await Recurrences.UpdateAsync(_editingId.Value, _form.ToRecurrence(_userId), _editingVersion);
 
         if (result.Failed)
             _formErrors = result.Messages;
@@ -215,6 +216,7 @@
     private void StartEdit(RecurringTransaction recurrence)
     {
         _editingId = recurrence.Id;
+        _editingVersion = recurrence.Version;
         _form = RecurrenceForm.From(recurrence);
         _formErrors = [];
     }

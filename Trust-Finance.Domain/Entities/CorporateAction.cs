@@ -27,7 +27,7 @@ public enum CorporateActionKind
 /// 0.1; a 10% bonus is 0.1 (new shares per share held). One number, no
 /// numerator/denominator pair to get backwards.
 /// </summary>
-public class CorporateAction : Notifiable
+public class CorporateAction : Notifiable, IVersioned, IAuditable
 {
     private CorporateAction() { }
 
@@ -69,6 +69,10 @@ public class CorporateAction : Notifiable
     }
 
     public int Id { get; private set; }
+
+    /// <summary>Stamped by the database on every write. See <see cref="IVersioned"/>.</summary>
+    public int Version { get; private set; }
+
     public string Ticker { get; private set; } = string.Empty;
     public CorporateActionKind Kind { get; private set; }
     public DateOnly Date { get; private set; }

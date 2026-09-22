@@ -1,4 +1,5 @@
 using TrustFinance.App.Services;
+using TrustFinance.Domain.Entities;
 using TrustFinance.Tests.Fixtures;
 
 namespace TrustFinance.Tests.Services;
@@ -6,9 +7,10 @@ namespace TrustFinance.Tests.Services;
 public class UserAccountServiceTests : IDisposable
 {
     private readonly SqliteDatabase _db = new();
+    private readonly FixedClock _clock = new(new DateOnly(2026, 9, 21));
     private readonly UserAccountService _service;
 
-    public UserAccountServiceTests() => _service = new UserAccountService(_db);
+    public UserAccountServiceTests() => _service = new UserAccountService(_db, _clock);
 
     public void Dispose() => _db.Dispose();
 
@@ -63,40 +65,182 @@ public class UserAccountServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ValidateCredentials_Should_Return_The_User_For_The_Right_Password()
+    public async Task SignIn_Should_Return_The_User_For_The_Right_Password()
     {
         await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
 
-        var user = await _service.ValidateCredentialsAsync("carla@example.com", "segredo123");
+        var outcome = await _service.SignInAsync("carla@example.com", "segredo123");
 
-        user.Should().NotBeNull();
-        user!.Name.Should().Be("Carla");
+        outcome.Status.Should().Be(SignInStatus.Success);
+        outcome.User!.Name.Should().Be("Carla");
     }
 
     [Theory]
     [InlineData("carla@example.com", "errada")]
     [InlineData("ninguem@example.com", "segredo123")]
     [InlineData("nao-e-email", "segredo123")]
-    public async Task ValidateCredentials_Should_Return_Null_For_Wrong_Email_Or_Password(string email, string password)
+    public async Task SignIn_Should_Refuse_A_Wrong_Email_Or_Password(string email, string password)
     {
         await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
 
-        (await _service.ValidateCredentialsAsync(email, password)).Should().BeNull();
+        var outcome = await _service.SignInAsync(email, password);
+
+        outcome.Status.Should().Be(SignInStatus.InvalidCredentials);
+        outcome.User.Should().BeNull();
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("qualquer")]
-    public async Task ValidateCredentials_Should_Never_Accept_The_Passwordless_Local_Account(string password)
+    public async Task SignIn_Should_Never_Accept_The_Passwordless_Local_Account(string password)
     {
         // The account Auth:Bypass owns is written straight to the table with no hash.
         // It has to stay unreachable from the login form, whatever is typed at it.
         await using (var db = _db.CreateDbContext())
         {
-            db.Users.Add(global::TrustFinance.Domain.Entities.User.Local("Local", AuthBypass.LocalEmail));
+            db.Users.Add(User.Local("Local", AuthBypass.LocalEmail));
             await db.SaveChangesAsync();
         }
 
-        (await _service.ValidateCredentialsAsync(AuthBypass.LocalEmail, password)).Should().BeNull();
+        (await _service.SignInAsync(AuthBypass.LocalEmail, password)).Status
+            .Should().Be(SignInStatus.InvalidCredentials);
+    }
+
+    [Fact]
+    public async Task SignIn_Should_Lock_The_Account_After_Five_Wrong_Passwords()
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        for (var attempt = 1; attempt < User.MaxFailedSignIns; attempt++)
+            (await _service.SignInAsync("carla@example.com", "errada")).Status
+                .Should().Be(SignInStatus.InvalidCredentials, "a conta só bloqueia na quinta tentativa");
+
+        var fifth = await _service.SignInAsync("carla@example.com", "errada");
+
+        fifth.Status.Should().Be(SignInStatus.LockedOut);
+        fifth.LockoutRemaining.Should().BePositive();
+    }
+
+    [Fact]
+    public async Task A_Locked_Account_Should_Refuse_Even_The_Right_Password()
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        for (var attempt = 0; attempt < User.MaxFailedSignIns; attempt++)
+            await _service.SignInAsync("carla@example.com", "errada");
+
+        // The point of the lockout: guessing right on the sixth try is worth nothing.
+        (await _service.SignInAsync("carla@example.com", "segredo123")).Status
+            .Should().Be(SignInStatus.LockedOut);
+    }
+
+    [Fact]
+    public async Task A_Lockout_Should_End_On_Its_Own()
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        for (var attempt = 0; attempt < User.MaxFailedSignIns; attempt++)
+            await _service.SignInAsync("carla@example.com", "errada");
+
+        _clock.Today = _clock.Today.AddDays(1);
+
+        (await _service.SignInAsync("carla@example.com", "segredo123")).Status
+            .Should().Be(SignInStatus.Success);
+    }
+
+    [Fact]
+    public async Task A_Successful_SignIn_Should_Forget_The_Failures_Before_It()
+    {
+        await _service.RegisterAsync("Carla", "carla@example.com", "segredo123");
+
+        for (var attempt = 0; attempt < User.MaxFailedSignIns - 1; attempt++)
+            await _service.SignInAsync("carla@example.com", "errada");
+
+        (await _service.SignInAsync("carla@example.com", "segredo123")).Status.Should().Be(SignInStatus.Success);
+
+        // Four failures, one success, then four more: the counter started over, so this is
+        // still short of the ceiling.
+        for (var attempt = 0; attempt < User.MaxFailedSignIns - 1; attempt++)
+            (await _service.SignInAsync("carla@example.com", "errada")).Status
+                .Should().Be(SignInStatus.InvalidCredentials);
+    }
+
+    [Fact]
+    public async Task Profile_Should_Change_The_Name_And_The_Email()
+    {
+        var user = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+
+        var result = await _service.UpdateProfileAsync(user.Id, "Carla Souza", " Carla.Souza@Example.com ");
+
+        result.Success.Should().BeTrue();
+        result.Value!.Name.Should().Be("Carla Souza");
+        result.Value.Email.Should().Be("carla.souza@example.com");
+
+        (await _service.SignInAsync("carla.souza@example.com", "segredo123")).Status.Should().Be(SignInStatus.Success);
+    }
+
+    [Fact]
+    public async Task Profile_Should_Refuse_An_Email_Another_Account_Already_Uses()
+    {
+        var carla = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+        await _service.RegisterAsync("Bruno", "bruno@example.com", "segredo123");
+
+        var result = await _service.UpdateProfileAsync(carla.Id, "Carla", "bruno@example.com");
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain("já está cadastrado");
+    }
+
+    [Fact]
+    public async Task Profile_Should_Refuse_A_Name_That_Is_Too_Short()
+    {
+        var user = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+
+        (await _service.UpdateProfileAsync(user.Id, "Jo", "carla@example.com")).Failed.Should().BeTrue();
+
+        // Nothing was half-applied: the row is exactly as it was.
+        var stored = (await _service.GetByIdAsync(user.Id))!;
+        stored.Name.Should().Be("Carla");
+    }
+
+    [Fact]
+    public async Task Password_Should_Change_When_The_Current_One_Is_Proved()
+    {
+        var user = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+
+        (await _service.ChangePasswordAsync(user.Id, "segredo123", "outrasenha456")).Success.Should().BeTrue();
+
+        (await _service.SignInAsync("carla@example.com", "outrasenha456")).Status.Should().Be(SignInStatus.Success);
+        (await _service.SignInAsync("carla@example.com", "segredo123")).Status.Should().Be(SignInStatus.InvalidCredentials);
+    }
+
+    [Theory]
+    [InlineData("errada", "outrasenha456", "Senha atual incorreta")]
+    [InlineData("segredo123", "curta", "no mínimo")]
+    [InlineData("segredo123", "segredo123", "diferente da atual")]
+    public async Task Password_Should_Be_Refused_With_A_Reason(string current, string next, string reason)
+    {
+        var user = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+
+        var result = await _service.ChangePasswordAsync(user.Id, current, next);
+
+        result.Failed.Should().BeTrue();
+        result.Messages.Should().ContainSingle().Which.Should().Contain(reason);
+
+        // The old password still works, which is the part that matters.
+        (await _service.SignInAsync("carla@example.com", "segredo123")).Status.Should().Be(SignInStatus.Success);
+    }
+
+    [Fact]
+    public async Task Changing_The_Password_Should_Clear_A_Lockout()
+    {
+        var user = (await _service.RegisterAsync("Carla", "carla@example.com", "segredo123")).Value!;
+
+        for (var attempt = 0; attempt < User.MaxFailedSignIns; attempt++)
+            await _service.SignInAsync("carla@example.com", "errada");
+
+        (await _service.ChangePasswordAsync(user.Id, "segredo123", "outrasenha456")).Success.Should().BeTrue();
+
+        (await _service.SignInAsync("carla@example.com", "outrasenha456")).Status.Should().Be(SignInStatus.Success);
     }
 }

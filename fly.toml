@@ -12,6 +12,11 @@ primary_region = "gru"
   Auth__Bypass = "true"
   Demo__Enabled = "true"
 
+  # Fly terminates TLS and forwards the request over plain HTTP on the internal network.
+  # Without this the app reads every request as http and every visitor as the proxy, which
+  # would make the sign-in throttle count the whole internet as one host.
+  Hosting__BehindProxy = "true"
+
 [http_service]
   internal_port = 8080
   force_https = true
@@ -21,6 +26,15 @@ primary_region = "gru"
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
+
+  # /health opens the database and reads a row, so a machine whose migrations failed is
+  # never sent traffic. Anonymous by design: a probe has no session.
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "get"
+    path = "/health"
+    timeout = "5s"
 
 [[vm]]
   size = "shared-cpu-1x"

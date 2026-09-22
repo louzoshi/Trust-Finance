@@ -284,6 +284,7 @@
     private FixedIncomeBook? _book;
     private FixedIncomeForm _form = new();
     private int? _editingId;
+    private int _editingVersion;
     private bool _saving;
     private List<string> _formErrors = [];
     private List<string> _listErrors = [];
@@ -306,7 +307,7 @@
 
         var result = _editingId is null
             ? await FixedIncome.CreateAsync(_form.ToInvestment(_userId))
-            : await FixedIncome.UpdateAsync(_editingId.Value, _form.ToInvestment(_userId));
+            : await FixedIncome.UpdateAsync(_editingId.Value, _form.ToInvestment(_userId), _editingVersion);
 
         if (result.Failed)
             _formErrors = result.Messages;
@@ -322,6 +323,7 @@
     private void StartEdit(FixedIncomeInvestment paper)
     {
         _editingId = paper.Id;
+        _editingVersion = paper.Version;
         _form = FixedIncomeForm.From(paper);
         _formErrors = [];
     }

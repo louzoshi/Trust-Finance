@@ -1,0 +1,100 @@
+@page "/auditoria"
+@inject AuditService Audit
+@inject CurrentUser CurrentUser
+
+<PageTitle>Auditoria · Trust Finance</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Auditoria</h1>
+        <p class="page-subtitle">Tudo que foi criado, alterado ou excluído nesta conta</p>
+    </div>
+    @if (_entities.Count > 0)
+    {
+        <div class="form-actions">
+            <label>
+                Registro
+                <select @bind="_entity" @bind:after="LoadAsync">
+                    <option value="">Todos</option>
+                    @foreach (var entity in _entities)
+                    {
+                        <option value="@entity">@AuditLabels.Entity(entity)</option>
+                    }
+                </select>
+            </label>
+        </div>
+    }
+</div>
+
+<section class="card">
+    @if (_entries is null)
+    {
+        <p class="page-status">Carregando…</p>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="page-status">Nada registrado ainda.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Quando</th>
+                    <th>Registro</th>
+                    <th>Ação</th>
+                    <th>O que mudou</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _entries)
+                {
+                    <tr>
+                        <td data-label="Quando">@entry.OccurredAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td data-label="Registro">
+                            @AuditLabels.Entity(entry.Entity)
+                            <span class="mono muted">#@entry.EntityId</span>
+                        </td>
+                        <td data-label="Ação">
+                            <span class="badge @BadgeFor(entry.Action)">@AuditLabels.Action(entry.Action)</span>
+                        </td>
+                        <td data-label="O que mudou">@AuditLabels.Changes(entry.Changes)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+
+        @if (_entries.Count == AuditService.DefaultLimit)
+        {
+            <p class="card-subtitle">Mostrando os @AuditService.DefaultLimit registros mais recentes.</p>
+        }
+    }
+</section>
+
+@code {
+    private int _userId;
+    private List<AuditEntry>? _entries;
+    private List<string> _entities = [];
+    private string _entity = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await CurrentUser.IdAsync();
+        _entities = await Audit.EntitiesAsync(_userId);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _entries = await Audit.RecentAsync(_userId, _entity);
+    }
+
+    private static string BadgeFor(AuditAction action) => action switch
+    {
+        AuditAction.Created => "badge-income",
+        AuditAction.Deleted => "badge-expense",
+        _ => "badge-muted"
+    };
+}

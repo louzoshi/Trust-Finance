@@ -87,7 +87,7 @@ public class InvestmentService(
         return Result<Trade>.Ok(trade);
     }
 
-    public async Task<Result> UpdateTradeAsync(int id, Trade corrected)
+    public async Task<Result> UpdateTradeAsync(int id, Trade corrected, int expectedVersion)
     {
         if (corrected.IsInvalid)
             return Result.Fail(corrected);
@@ -98,11 +98,25 @@ public class InvestmentService(
         if (trade is null)
             return Result.Fail(nameof(Trade), "Operação não encontrada");
 
+        // The version the form was opened on. A correction made against an older one is
+        // refused rather than laid on top of somebody else's.
+        if (trade.Version != expectedVersion)
+            return Concurrency.Conflict();
+
         trade.CorrectTo(corrected);
         if (trade.IsInvalid)
             return Result.Fail(trade);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Written between the check above and this line — the window it cannot see.
+            return Concurrency.Conflict();
+        }
+
         return Result.Ok();
     }
 

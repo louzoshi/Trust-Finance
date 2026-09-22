@@ -66,7 +66,7 @@ public class FixedIncomeServiceTests : IDisposable
     {
         var created = (await _service.CreateAsync(Cdb(_db.Ada))).Value!;
 
-        (await _service.UpdateAsync(created.Id, Cdb(_db.Bob, 99m))).Failed.Should().BeTrue();
+        (await _service.UpdateAsync(created.Id, Cdb(_db.Bob, 99m), created.Version)).Failed.Should().BeTrue();
         (await _service.DeleteAsync(created.Id, _db.Bob)).Failed.Should().BeTrue();
         (await _service.RedeemAsync(created.Id, new DateOnly(2026, 5, 1), _db.Bob)).Failed.Should().BeTrue();
 
