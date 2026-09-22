@@ -150,6 +150,10 @@ The dependency direction is one-way: `App` → `Data` → `Domain`. The domain
 project references nothing, which is what keeps the dashboard maths testable
 without a database.
 
+Why it is one process and one file, why that is a modular monolith rather than
+microservices, and what would change — and which AWS services would carry it — if it
+became a product for more than one machine: [docs/decisions.md](docs/decisions.md).
+
 ---
 
 ## Features
